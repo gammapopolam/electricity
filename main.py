@@ -1,5 +1,6 @@
+#%%
 from shapely import from_geojson, box, buffer, intersects, equals, touches, relate
-from shapely.geometry import MultiLineString
+from shapely.geometry import MultiLineString, LineString
 from shapely.ops import unary_union
 import json
 import geopandas as gpd
@@ -9,7 +10,7 @@ import math
 # каждую часть мультилинии анализируют относительно других 
 # ограничения должны зависеть от масштаба
 # геометрии в одном индексе, если пересечение их bbox дает наименьшую площадь
-
+#%%
 class Restrictions:
     def __init__(self, l1, l2, buffer_distance):
         self.l1=l1
@@ -72,7 +73,7 @@ class Restrictions:
 
     
 def angle_checker(l1, l2):
-    print(l1, l2)
+    #print(l1, l2)
     if l1.geom_type=='MultiLineString':
         l1=list(l1.geoms[0].coords)
     else:
@@ -212,7 +213,29 @@ def search_parallels2(TL_singleparts, TL_singleparts_multi=[], TL_singleparts_br
 with open('tests_utm.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
 
-
+def init_gpd(TL):
+    gdf=gpd.GeoDataFrame.from_features(TL['features'])
+    return gdf
+def explode_gpd(TL_gdf):
+    line_segs = gpd.GeoSeries(
+    TL_gdf["geometry"]
+    .apply(
+        lambda g: [g]
+        if isinstance(g, LineString)
+        else [p for p in g.geoms]
+    )
+    .apply(
+        lambda l: [
+            LineString([c1, c2])
+            for p in l
+            for c1, c2 in zip(p.coords, list(p.coords)[1:])
+        ]
+    )
+    .explode()
+    )
+    gdf_singleparts_TL=line_segs.to_frame().join(gdf_TL.drop(columns="geometry")).reset_index(drop=True)
+    gdf_singleparts_TL.rename(columns={'id':'origin_id'}, inplace=True)
+    return gdf_singleparts_TL
 def explode(TL):
     TL_singleparts=[]
     print('Num of features before exploding: ', len(TL['features']))
@@ -225,7 +248,6 @@ def explode(TL):
                 for j in range(len(part)-1):
                     singlepart_geometry = {'type': 'LineString', 'coordinates':[part[j], part[j+1]]}
                     singlepart=feature.copy()
-                    singlepart['properties']['id']=f'{i}{j}'
                     singlepart['geometry']=singlepart_geometry
                     singlepart['geometry']['crs']={'type':'name', 'properties':{'name':'EPSG:32635'}}
                     TL_singleparts.append(singlepart)
@@ -237,11 +259,19 @@ def explode(TL):
                 singlepart_geometry = {'type': 'LineString', 'coordinates':[part[j], part[j+1]]}
                 singlepart=feature.copy()
                 singlepart['geometry']=singlepart_geometry
-                singlepart['properties']['id']=f'{i}{j}'
                 singlepart['geometry']['crs']={'type':'name', 'properties':{'name':'EPSG:32635'}}
                 TL_singleparts.append(singlepart)
     print('Num of features after exploding: ', len(TL_singleparts))
-    return TL_singleparts
+    new_id=0
+    TL_singleparts2=[]
+    for f in TL_singleparts:
+        print(new_id, end=' ')
+        f['properties']['id']=f'{new_id}'
+        #print(f)
+        TL_singleparts2.append(f)
+        new_id=new_id+1
+    print(TL_singleparts2)
+    return TL_singleparts2
 def bboxes(TL_singleparts):
     print('Get bboxes...')
     TL_singleparts_bboxes=[]
@@ -285,27 +315,33 @@ def unpack_into_gdf(TL_singleparts_processed):
     gdf = gpd.GeoDataFrame({'val': val1, 'geometry': geom}, crs='EPSG:32635')
     #gdf.set_geometry('0')
     return gdf
-TL_singleparts=explode(TL)
+gdf_TL=init_gpd(TL)
+gdf_exploded_TL=explode_gpd(gdf_TL)
+
+#%%
 TL_singleparts_shapely=to_shapely(TL_singleparts)
 #print(TL_singleparts_shapely)
 TL_singleparts_processed=process_parts(TL_singleparts_shapely)
 #print(TL_singleparts_processed)
 gdf=unpack_into_gdf(TL_singleparts_processed)
-print(gdf)
-print(gdf.plot())
-'''
-TL_singleparts_parallels, TL_singleparts_branches=search_parallels2(TL_singleparts.copy())
+gdf.to_file(filename='test_gdf.geojson', driver='GeoJSON')
+#print(gdf)
+#print(gdf.plot())
+
+
+#TL_singleparts_parallels, TL_singleparts_branches=search_parallels2(TL_singleparts.copy())
 #TL_singleparts_2
-new_fc={'type':'FeatureCollection', 'features': []}
-for fc in TL_singleparts_parallels:
-    new_fc['features'].append(fc)
-new_fc['crs']={'type':'name', 'properties':{'name':'EPSG:32635'}}
-TL_singleparts_branches
-new_fc2={'type':'FeatureCollection', 'features': []}
-for fc in TL_singleparts_branches:
-    new_fc2['features'].append(fc)
-new_fc2['crs']={'type':'name', 'properties':{'name':'EPSG:32635'}}
-'''
+#new_fc={'type':'FeatureCollection', 'features': []}
+#for fc in TL_singleparts_parallels:
+#    new_fc['features'].append(fc)
+#new_fc['crs']={'type':'name', 'properties':{'name':'EPSG:32635'}}
+#TL_singleparts_branches
+#new_fc2={'type':'FeatureCollection', 'features': []}
+#for fc in TL_singleparts_branches:
+#    new_fc2['features'].append(fc)
+#new_fc2['crs']={'type':'name', 'properties':{'name':'EPSG:32635'}}
+
 # TL_singleparts got same IDs as TL_singleparts_bboxes
 # Need to index singleparts by bboxes
 # After indexing, single parts turn into multipart geometry with restrictions
+# %%
