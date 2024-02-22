@@ -1,7 +1,8 @@
 
 from shapely import from_geojson, intersects, equals, touches, relate
 from shapely.geometry import MultiLineString, LineString
-from shapely.ops import unary_union
+#from shapely.ops import unary_union
+from shapely import unary_union, normalize
 import json
 import geopandas as gpd
 import math
@@ -119,14 +120,21 @@ def explode_gpd(gdf):
 def buffers_gpd(gdf, distance):
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
     return gdf
-def process_parts(gdf, length):
+#TODO: перенос в пустой гдф
+def process_parts(gdf):
+    #print(gdf)
     for i, val1 in gdf.iterrows():
+        #print(i)
         l1=val1.line
         l1_buff=val1.buffer
-        gdf_slice=gdf[gdf.index!=i]
+        gdf_slice=gdf.copy()
+        gdf_slice=gdf_slice[gdf_slice.index!=i]
+        remove_candidates=[]
+        val1_part_id=val1.part_id
         while len(gdf_slice)>0:
             val2=gdf_slice.iloc[-1]
-            gdf_slice.drop(index=gdf_slice.index[-1], axis=0, inplace=True)
+            val2_index=gdf.line[gdf.line == val2.line].index.tolist()
+            gdf_slice.drop(index=val2_index, axis=0, inplace=True)
             l2=val2.line
             l2_buff=val2.buffer
             
@@ -134,23 +142,44 @@ def process_parts(gdf, length):
             flag=restr.check()
             #print(val1.part_id, val2.part_id, flag)
             if flag=='stream':
-                if isinstance(val1.part_id, str) and isinstance(val2.part_id, str):
-                    part_ids=[val1.part_id, val2.part_id]
-                elif isinstance(val1.part_id, str) and isinstance(val2.part_id, list):
-                    part_ids=[val1.part_id, *val2.part_id]
-
-                elif isinstance(val1.part_id, list) and isinstance(val2.part_id, str):
-                    part_ids=[*val1.part_id, val2.part_id]
-                elif isinstance(val1.part_id, list) and isinstance(val2.part_id, list):
-                    part_ids=[*val1.part_id, *val2.part_id]
-                    
-                gdf.iloc[i]={
+                if isinstance(val1_part_id, str) and isinstance(val2.part_id, str):
+                    part_ids=[val1_part_id, val2.part_id]
+                elif isinstance(val1_part_id, str) and isinstance(val2.part_id, list):
+                    part_ids=[val1_part_id, *val2.part_id]
+                elif isinstance(val1_part_id, list) and isinstance(val2.part_id, str):
+                    part_ids=[*val1_part_id, val2.part_id]
+                elif isinstance(val1_part_id, list) and isinstance(val2.part_id, list):
+                    part_ids=[*val1_part_id, *val2.part_id]
+                #gdf.drop(index=val2_index, inplace=True)
+                
+                #print('in while', val1_part_id, val2.part_id)
+                #print('ids', i, val2_index)
+                #print(part_ids)
+                gdf.at[i, 'line']=restr.to_multiline(flag)
+                gdf.at[i, 'buffer']=normalize(unary_union([l1_buff, l2_buff]))
+                gdf.at[i, 'origin_id']=int(val1.origin_id)
+                gdf.at[i, 'part_id']=part_ids
+                l1=restr.to_multiline(flag)
+                l1_buff=normalize(unary_union([l1_buff, l2_buff]))
+                val1_part_id=part_ids
+                
+                #remove_candidates.append(val2_index[0])
+                '''gdf.at[i]={
                     'line': restr.to_multiline(flag), 
-                    'buffer': unary_union([l1_buff, l2_buff]),
+                    'buffer': normalize(unary_union([l1_buff, l2_buff])),
                     'origin_id': val1.origin_id,
                     'part_id': part_ids
-                    }
+                    }'''
+                #print(val2_index)
+                gdf=gdf[gdf.line!=val2.line]
+                print(gdf)
+                #print(remove_candidates)
+        #if len(remove_candidates)>0:
+            #print(len(remove_candidates), i, remove_candidates)
+        #    gdf=gdf[~gdf.index.isin(remove_candidates)]
     return gdf
+# список индексов, после каждой итерации добавить индекс val2 
+
 #TODO: remove duplicates
 #origin is the object that has the biggest length of part_id
 #duplicates are the objects that contain items from origin part_id
@@ -164,7 +193,7 @@ def remove_duplicates(gdf):
 gdf_TL=init_gpd(TL)
 gdf_exploded_TL=explode_gpd(gdf_TL)
 #print(gdf_exploded_TL.columns)
-gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, 50)
+gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, 100)
 #gdf_buffer_TL['part_id']=gdf_buffer_TL.index.astype(str)
 #exploded=gdf_buffer_TL.drop('buffer', axis=1)
 #exploded.set_crs(epsg=32635, inplace=True)
@@ -172,12 +201,20 @@ gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, 50)
 
 #! NUMBERS OF PARTS IN MULTILINESTRING SET FROM LEFT TO RIGHT 
 
-gdf_processed=process_parts(gdf_buffer_TL, len(gdf_buffer_TL))
-
+gdf_processed=process_parts(gdf_buffer_TL)
 gdf_processed_nodupl=remove_duplicates(gdf_processed)
+gdf_processed_nodupl_buffer=gdf_processed_nodupl.copy()
 # geopandas can't export to file with list type of column
 gdf_processed_nodupl['part_id']=gdf_processed_nodupl['part_id'].str.join(',')
 #print(gdf_processed_nodupl)
 gdf_processed_nodupl.drop('buffer', axis=1, inplace=True)
 gdf_processed_nodupl.set_crs(epsg=32635, inplace=True)
-gdf_processed_nodupl.to_file(filename='tests.gpkg', driver='GPKG')
+gdf_processed_nodupl.to_file(filename='tests_line.gpkg', driver='GPKG')
+
+# geopandas can't export to file with list type of column
+gdf_processed_nodupl_buffer['part_id']=gdf_processed_nodupl_buffer['part_id'].str.join(',')
+#print(gdf_processed_nodupl)
+gdf_processed_nodupl_buffer.set_geometry('buffer', inplace=True)
+gdf_processed_nodupl_buffer.drop('line', axis=1, inplace=True)
+gdf_processed_nodupl_buffer.set_crs(epsg=32635, inplace=True)
+gdf_processed_nodupl_buffer.to_file(filename='tests_buffer.gpkg', driver='GPKG')
