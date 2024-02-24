@@ -75,6 +75,7 @@ class Restrictions:
     #def 
 
 #TODO: update with multilinestrings, avoid using only first geom
+# IT IS NOT DEPENDS ON THEIR DIRECTIONS
 def angle_checker(l1, l2):
     flag='undefined'
     if l1.geom_type=='MultiLineString' and l2.geom_type=='MultiLineString':
@@ -247,8 +248,60 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     # Print New Line on Complete
     if iteration == total: 
         print()
+def parallel_offset(gdf):
+    # если дирекционный угол отрезков 315<d<45 или 135<d<225 то сортировка по Х
+    # если дирекционный угол отрезков 45<d<135 или 225<d<315 то сортировка по Y
+    for i, val in gdf.iterrows():
+        segment=val.line
+        if segment.geom_type=='MultiLineString':
+            segment_flipped=flip_order(segment)
+            geoms=segment_flipped
+            hallway_len=len(geoms)
+            # from leftest to rightest
+            order_keys=[i for i in range(1, hallway_len+1)]
+            order_values=[]
+            for geom in geoms:
+                geoms_slice=geoms.copy()
+                geoms_slice.remove(geom)
+                for geom_slice in geoms_slice:
+                    side=side(geom, geom_slice)
+                    if side=='left':
+                        pass
+                    
+def flip_order(multiline):
+    base_geom=multiline.geoms[0]
+    geoms_slice=multiline.copy()
+    geoms_slice.remove(base_geom)
+    l1=list(base_geom.coords)
+    for geom_slice in geoms_slice:
+        l2=list(geom_slice.coords)
+        m1 = (l1[1][1]-l1[0][1])/(l1[1][0]-l1[0][0])
+        m2 = (l2[1][1]-l2[0][1])/(l2[1][0]-l2[0][0])
+        angle_rad = abs(math.atan(m1) - math.atan(m2))
+        angle_deg = angle_rad*180/math.pi
+        #print('angle diff:', abs(angle_deg))
+        if abs(angle_deg)>3 and abs(angle_deg)<177:
+            geoms_slice.remove(geom_slice)
+            geom_slice=LineString([l2[1], l2[0]])
+            geoms_slice.append(geom_slice)
+    new_multiline=MultiLineString([base_geom, *geoms_slice])
+    return new_multiline
 
-with open('tests_utm2.geojson', encoding='utf-8') as file:
+def side(l1, l2):
+    flag=None
+    xp1, yp1=list(l1.coords)[0]
+    xp2, yp2=list(l1.coords)[1]
+    xq, yq=list(l2.coords)[0]
+    xr, yr=list(l2.coords)[1]
+    area_qpr1=1/2(xq*yp1-xp1*yq+xp1*yr-xr*yp1+xr*yq-xq*yr)
+    area_qpr2=1/2(xq*yp2-xp2*yq+xp2*yr-xr*yp2+xr*yq-xq*yr)
+    if area_qpr1>0 and area_qpr2>0:
+        flag='left'
+    elif area_qpr1<0 and area_qpr2<0:
+        flag='right'
+    return flag
+
+with open('tests_utm.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
 gdf_TL=init_gpd(TL)
 gdf_exploded_TL=explode_gpd(gdf_TL)
