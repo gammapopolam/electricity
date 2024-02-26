@@ -59,8 +59,8 @@ class Restrictions:
     def is_stream(self):
         if relate(self.l1, self.l2)=='FF1FF0102' and angle_checker(self.l1, self.l2)=='hallway':
             return True
-        #elif relate(self.l1, self.l2)=='FF1F00102' and angle_checker(self.l1, self.l2)=='hallway':
-        #    return True
+        elif relate(self.l1, self.l2)=='1F1F00102' and angle_checker(self.l1, self.l2)=='hallway':
+            return True
         #elif relate(self.l1, self.l2)=='FF1F0F102' and angle_checker(self.l1, self.l2)=='hallway':
         #    return True
         else:
@@ -151,9 +151,9 @@ def explode_gpd(gdf):
     # Some mistake in gdf_exploded columns
 
     # FOR HOME-PC
-    #gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
+    gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
     # FOR LAPTOP
-    gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
+    #gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
 
     gdf_exploded['part_id']=gdf_exploded.origin_id.astype(str)+'_'+gdf_exploded.index.astype(str)
     gdf_exploded=gdf_exploded.set_geometry('line')
@@ -223,7 +223,7 @@ def process_parts(gdf):
                     part_ids=[*val1_part_id, *val2.part_id]
                 l1=restr.to_multiline(flag)
                 l1_buff=normalize(unary_union([l1_buff, l2_buff]))
-                val1_part_id=part_ids
+                val1_part_id=list(set(part_ids))
                 gdf=gdf[gdf.line!=val2.line]
                 gdf.at[i, 'line']=l1
                 gdf.at[i, 'buffer']=l1_buff
@@ -289,6 +289,16 @@ def flip_order(gdf):
                 geoms_slice[geom_slice_index]=LineString(l2)
             geoms_slice.append(base_geom)
             gdf.at[i, 'line']=MultiLineString(geoms_slice)
+            
+            
+    for i, val in gdf.iterrows():
+        geometry=val.line
+        if geometry.geom_type=='LineString':
+            l1=list(geometry.coords)
+        elif geometry.geom_type=='MultiLineString':
+            l1=list(geometry.geoms[0].coords)
+        direction=get_direction(l1)
+        gdf.at[i, 'direction']=direction
     return gdf
 def parallel_offset(gdf, dist):
     for j, val in gdf.iterrows():
@@ -314,15 +324,15 @@ def parallel_offset(gdf, dist):
             print(d, end=' ')
             #TODO: mistakes should be fixed
             if d>=45 and d<135:
-                flag='Ox_right'
+                flag='Ox_left'
                 df.sort_values(by='p1_x', ascending=False, inplace=True)
             elif d>=135 and d<225:
                 flag='Oy_up'
                 df.sort_values(by='p1_y', ascending=True, inplace=True)
-            elif d>=225 and d<315:
-                flag='Ox_left'
+            elif (d>=225 and d<315) or (d<=495 and d>405):
+                flag='Ox_right'
                 df.sort_values(by='p1_x', ascending=False, inplace=True)
-            elif d<45 or (d>=315 and d<=405):
+            elif (d>=315 and d<=405) or (d>-360 and d<-270):
                 flag='Oy_down'
                 df.sort_values(by='p1_y', ascending=False, inplace=True)
             
@@ -354,6 +364,7 @@ def parallel_offset(gdf, dist):
                     offset_lines.append(offset)
                     d-=distance
             gdf.at[j, 'line']=MultiLineString(offset_lines)
+            gdf.at[j, 'flag']=flag
     return gdf
 with open('tests_utm.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
@@ -368,14 +379,25 @@ gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, 100)
 
 #! NUMBERS OF PARTS IN MULTILINESTRING SET FROM LEFT TO RIGHT 
 # maybe not
-gdf_processed=process_parts(gdf_buffer_TL)
-gdf_flipped=parallel_offset(flip_order(gdf_processed), 50)
-gdf_flipped['part_id']=gdf_flipped['part_id'].str.join(',')
-gdf_flipped.drop('simple_index', axis=1, inplace=True)
-gdf_flipped.drop('buffer', axis=1, inplace=True)
-gdf_flipped.set_geometry('line', inplace=True)
-gdf_flipped.set_crs(epsg=32635, inplace=True)
-gdf_flipped.to_file(filename='tests_offset.gpkg', driver='GPKG')
+
+
+def export_rawgdf(gdf, name):
+    # No buffer, no simple-index
+    gdf['part_id']=gdf['part_id'].str.join(',')
+    gdf.drop('simple_index', axis=1, inplace=True)
+    gdf.drop('buffer', axis=1, inplace=True)
+    gdf.set_geometry('line', inplace=True)
+    gdf.set_crs(epsg=32635, inplace=True)
+    gdf.to_file(filename=name, driver='GPKG')
+    print(f'Exporting {name} finished')
+# doubled proccess to avoid duplicates in multilinestrings in the whole hallway's
+gdf_processed=process_parts(process_parts(gdf_buffer_TL))
+gdf_flipped=flip_order(gdf_processed)
+export_rawgdf(gdf_flipped.copy(), 'tests_flipped.gpkg')
+gdf_offset=parallel_offset(gdf_flipped, 50)
+export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
+#TODO: для концов каждого сегмента провести линии в пределах буфера
+#все соседние линии которые выходят за рамки отсечь по пересечению границы буфера
 
 #gdf_offset=parallel_offset(gdf_flipped)
 '''

@@ -11,3 +11,4 @@ tests_line.gpkg-shm
 tests_line.gpkg-wal
 tests_flip.gpkg
 tests_offset.gpkg
+tests_flipped.gpkg

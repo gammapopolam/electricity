@@ -2,7 +2,6 @@ from shapely import from_wkt
 from shapely.geometry import MultiLineString, LineString
 import math
 import pandas as pd
-from operator import itemgetter
 wkt='MultiLineString ((661649.79104394 6635517.19294568, 664227.55918609 6635196.88195656),(664243.70611254 6635245.10146993, 661646.11600118 6635567.96471892),(664217.30864214 6635147.77912126, 661651.55405597 6635466.27027538))'
 multiline = from_wkt(wkt)
 segments=list(multiline.geoms)
