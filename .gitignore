@@ -9,3 +9,4 @@ tests_utm2.qmd
 tests_utm.qmd
 tests_line.gpkg-shm
 tests_line.gpkg-wal
+tests_flip.gpkg

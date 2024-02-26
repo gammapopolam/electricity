@@ -72,8 +72,18 @@ class Restrictions:
             return False
     def single():
         pass
-    #def 
-
+def get_direction(l1):
+    dx1, dy1 = l1[1][0]-l1[0][0], l1[1][1]-l1[0][1]
+    r1=math.atan2(dy1,dx1)*180/math.pi
+    if dx1>0 and dy1>0:
+        a1=r1
+    elif dx1<0 and dy1>0:
+        a1=180-r1
+    elif dx1<0 and dy1<0:
+        a1=r1-180
+    elif dx1>0 and dy1<0:
+        a1=360-r1
+    return a1
 #TODO: update with multilinestrings, avoid using only first geom
 # IT IS NOT DEPENDS ON THEIR DIRECTIONS
 def angle_checker(l1, l2):
@@ -139,7 +149,12 @@ def explode_gpd(gdf):
     .explode())
     gdf_exploded=line_segs.to_frame().join(gdf.drop(columns="geometry")).reset_index(drop=True)
     # Some mistake in gdf_exploded columns
-    gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
+
+    # FOR HOME-PC
+    #gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
+    # FOR LAPTOP
+    gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
+
     gdf_exploded['part_id']=gdf_exploded.index.astype(str)
     gdf_exploded=gdf_exploded.set_geometry('line')
     for i, val in gdf_exploded.iterrows():
@@ -248,58 +263,64 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     # Print New Line on Complete
     if iteration == total: 
         print()
-def parallel_offset(gdf):
-    # если дирекционный угол отрезков 315<d<45 или 135<d<225 то сортировка по Х
-    # если дирекционный угол отрезков 45<d<135 или 225<d<315 то сортировка по Y
-    for i, val in gdf.iterrows():
-        segment=val.line
-        if segment.geom_type=='MultiLineString':
-            segment_flipped=flip_order(segment)
-            geoms=segment_flipped
-            hallway_len=len(geoms)
-            # from leftest to rightest
-            order_keys=[i for i in range(1, hallway_len+1)]
-            order_values=[]
-            for geom in geoms:
-                geoms_slice=geoms.copy()
-                geoms_slice.remove(geom)
-                for geom_slice in geoms_slice:
-                    side=side(geom, geom_slice)
-                    if side=='left':
-                        pass
                     
-def flip_order(multiline):
-    base_geom=multiline.geoms[0]
-    geoms_slice=multiline.copy()
-    geoms_slice.remove(base_geom)
-    l1=list(base_geom.coords)
-    for geom_slice in geoms_slice:
-        l2=list(geom_slice.coords)
-        m1 = (l1[1][1]-l1[0][1])/(l1[1][0]-l1[0][0])
-        m2 = (l2[1][1]-l2[0][1])/(l2[1][0]-l2[0][0])
-        angle_rad = abs(math.atan(m1) - math.atan(m2))
-        angle_deg = angle_rad*180/math.pi
-        #print('angle diff:', abs(angle_deg))
-        if abs(angle_deg)>3 and abs(angle_deg)<177:
-            geoms_slice.remove(geom_slice)
-            geom_slice=LineString([l2[1], l2[0]])
-            geoms_slice.append(geom_slice)
-    new_multiline=MultiLineString([base_geom, *geoms_slice])
-    return new_multiline
+def flip_order(gdf):
+    for i, val in gdf.iterrows():
+        geometry=val.line
+        if geometry.geom_type=='MultiLineString':
+            base_geom=list(geometry.geoms)[0]
+            geoms_slice=list(geometry.geoms).copy()
+            geoms_slice.remove(base_geom)
+            #print(base_geom, geoms_slice)
+            l1=list(base_geom.coords)
+            a1 = get_direction(l1)
+            print(base_geom, end=' ')
+            for geom_slice in geoms_slice:
+                l2=list(geom_slice.coords)
+                a2 = get_direction(l2)
+                #print(a1, a2)
+                if abs(a1-a2)>5:
+                    l2=[l2[1], l2[0]]
+                    print('flipped', a1, a2)
+                else:
+                    print('not flipped', a1, a2)
+                    pass
+                geom_slice_index=geoms_slice.index(geom_slice)
+                geoms_slice[geom_slice_index]=LineString(l2)
+            geoms_slice.append(base_geom)
+            gdf.at[i, 'line']=MultiLineString(geoms_slice)
+    return gdf
+def parallel_offset(gdf):
+    for i, val in gdf.iterrows():
+        geometry=val.line
+        if geometry.geom_type=='MultiLineString':
+            parts=[list(x.coords) for x in list(geometry.geoms)]
+            d=get_direction(parts[0])
+            #print(parts)
+            flag=None
+            df = pd.DataFrame(parts, columns=['line_p1', 'line_p2'])
+            df['p1_x']=[df['line_p1'][i][0] for i in range(len(df))]
+            df['p1_y']=[df['line_p1'][i][1] for i in range(len(df))]
+            df['p2_x']=[df['line_p2'][i][0] for i in range(len(df))]
+            df['p2_y']=[df['line_p2'][i][1] for i in range(len(df))]
+            print(d, LineString(parts[0]))
+            #TODO: how to handle negative values of d?
+            if d>=45 and d<135:
+                flag='Ox_left'
+                df.sort_values(by='p1_x', ascending=False, inplace=True)
+            elif d>=135 and d<225:
+                flag='Oy_down'
+                df.sort_values(by='p1_y', ascending=False, inplace=True)
+            elif d>=225 and d<315:
+                flag='Ox_right'
+                df.sort_values(by='p1_x', ascending=True, inplace=True)
+            elif d>=315 and (d<45 or d+360<405):
+                flag='Oy_up'
+                df.sort_values(by='p1_y', ascending=True, inplace=True)
+            print(flag)
+            df=df.reset_index(drop=True)
+            sorted=[[df['line_p1'][i], df['line_p2'][i]] for i in range(len(df))]
 
-def side(l1, l2):
-    flag=None
-    xp1, yp1=list(l1.coords)[0]
-    xp2, yp2=list(l1.coords)[1]
-    xq, yq=list(l2.coords)[0]
-    xr, yr=list(l2.coords)[1]
-    area_qpr1=1/2(xq*yp1-xp1*yq+xp1*yr-xr*yp1+xr*yq-xq*yr)
-    area_qpr2=1/2(xq*yp2-xp2*yq+xp2*yr-xr*yp2+xr*yq-xq*yr)
-    if area_qpr1>0 and area_qpr2>0:
-        flag='left'
-    elif area_qpr1<0 and area_qpr2<0:
-        flag='right'
-    return flag
 
 with open('tests_utm.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
@@ -315,6 +336,16 @@ gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, 100)
 #! NUMBERS OF PARTS IN MULTILINESTRING SET FROM LEFT TO RIGHT 
 # maybe not
 gdf_processed=process_parts(gdf_buffer_TL)
+gdf_flipped=flip_order(gdf_processed)
+gdf_flipped['part_id']=gdf_flipped['part_id'].str.join(',')
+gdf_flipped.drop('simple_index', axis=1, inplace=True)
+gdf_flipped.drop('buffer', axis=1, inplace=True)
+gdf_flipped.set_geometry('line', inplace=True)
+gdf_flipped.set_crs(epsg=32635, inplace=True)
+gdf_flipped.to_file(filename='tests_flip.gpkg', driver='GPKG')
+
+#gdf_offset=parallel_offset(gdf_flipped)
+'''
 gdf_processed.drop('simple_index', axis=1, inplace=True)
 gdf_processed_nodupl=remove_duplicates(gdf_processed)
 gdf_processed_nodupl_buffer=gdf_processed_nodupl.copy()
@@ -332,6 +363,6 @@ gdf_processed_nodupl_buffer.set_geometry('buffer', inplace=True)
 gdf_processed_nodupl_buffer.drop('line', axis=1, inplace=True)
 gdf_processed_nodupl_buffer.set_crs(epsg=32635, inplace=True)
 gdf_processed_nodupl_buffer.to_file(filename='tests_buffer.gpkg', driver='GPKG')
-
+'''
 
 # After exploding, for each LineString buffer find indexes of intersected LineString buffers
