@@ -155,7 +155,7 @@ def explode_gpd(gdf):
     # FOR LAPTOP
     gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
 
-    gdf_exploded['part_id']=gdf_exploded.index.astype(str)
+    gdf_exploded['part_id']=gdf_exploded.origin_id.astype(str)+'_'+gdf_exploded.index.astype(str)
     gdf_exploded=gdf_exploded.set_geometry('line')
     for i, val in gdf_exploded.iterrows():
         part_id=val.part_id
@@ -290,9 +290,10 @@ def flip_order(gdf):
             geoms_slice.append(base_geom)
             gdf.at[i, 'line']=MultiLineString(geoms_slice)
     return gdf
-def parallel_offset(gdf):
-    for i, val in gdf.iterrows():
+def parallel_offset(gdf, dist):
+    for j, val in gdf.iterrows():
         geometry=val.line
+        part_ids=val.part_id
         if geometry.geom_type=='MultiLineString':
             parts=[list(x.coords) for x in list(geometry.geoms)]
             d=get_direction(parts[0])
@@ -303,25 +304,57 @@ def parallel_offset(gdf):
             df['p1_y']=[df['line_p1'][i][1] for i in range(len(df))]
             df['p2_x']=[df['line_p2'][i][0] for i in range(len(df))]
             df['p2_y']=[df['line_p2'][i][1] for i in range(len(df))]
-            print(d, LineString(parts[0]))
+            
             #TODO: how to handle negative values of d?
+            # if d>360 then 360-d - not correct
+            if d<0:
+                d=d+360
+            #elif d>360:
+            #    d=d-360
+            print(d, end=' ')
+            #TODO: mistakes should be fixed
             if d>=45 and d<135:
-                flag='Ox_left'
+                flag='Ox_right'
                 df.sort_values(by='p1_x', ascending=False, inplace=True)
             elif d>=135 and d<225:
-                flag='Oy_down'
-                df.sort_values(by='p1_y', ascending=False, inplace=True)
-            elif d>=225 and d<315:
-                flag='Ox_right'
-                df.sort_values(by='p1_x', ascending=True, inplace=True)
-            elif d>=315 and (d<45 or d+360<405):
                 flag='Oy_up'
                 df.sort_values(by='p1_y', ascending=True, inplace=True)
-            print(flag)
+            elif d>=225 and d<315:
+                flag='Ox_left'
+                df.sort_values(by='p1_x', ascending=False, inplace=True)
+            elif d<45 or (d>=315 and d<=405):
+                flag='Oy_down'
+                df.sort_values(by='p1_y', ascending=False, inplace=True)
+            
+            distance=dist
             df=df.reset_index(drop=True)
-            sorted=[[df['line_p1'][i], df['line_p2'][i]] for i in range(len(df))]
-
-
+            lines=[[df['line_p1'][i], df['line_p2'][i]] for i in range(len(df))]
+            
+            #multil=MultiLineString(sorted)
+            # NEGATIVE - RIGHT, POSITIVE - LEFT
+            offset_lines=[]
+            if len(lines)%2==0:
+                print(flag, len(lines), part_ids)
+                d=(distance*((len(lines)//2))-distance//2)
+                # CHECK FOR 4 LINES IN HALLWAY
+                #print(d)
+                #TODO: negative/positive offset instead of left/middle/right pos
+                for i in range(len(lines)):
+                    print(i, d)
+                    offset=LineString(lines[i]).offset_curve(distance=d)
+                    offset_lines.append(offset)
+                    d-=distance
+            elif len(lines)%2!=0:
+                d=distance*(len(lines)//2)
+                print(flag, len(lines), part_ids)
+                for i in range(len(lines)):
+                    #d=d*i
+                    print(i, d)
+                    offset=LineString(lines[i]).offset_curve(distance=d)
+                    offset_lines.append(offset)
+                    d-=distance
+            gdf.at[j, 'line']=MultiLineString(offset_lines)
+    return gdf
 with open('tests_utm.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
 gdf_TL=init_gpd(TL)
@@ -336,13 +369,13 @@ gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, 100)
 #! NUMBERS OF PARTS IN MULTILINESTRING SET FROM LEFT TO RIGHT 
 # maybe not
 gdf_processed=process_parts(gdf_buffer_TL)
-gdf_flipped=flip_order(gdf_processed)
+gdf_flipped=parallel_offset(flip_order(gdf_processed), 50)
 gdf_flipped['part_id']=gdf_flipped['part_id'].str.join(',')
 gdf_flipped.drop('simple_index', axis=1, inplace=True)
 gdf_flipped.drop('buffer', axis=1, inplace=True)
 gdf_flipped.set_geometry('line', inplace=True)
 gdf_flipped.set_crs(epsg=32635, inplace=True)
-gdf_flipped.to_file(filename='tests_flip.gpkg', driver='GPKG')
+gdf_flipped.to_file(filename='tests_offset.gpkg', driver='GPKG')
 
 #gdf_offset=parallel_offset(gdf_flipped)
 '''
