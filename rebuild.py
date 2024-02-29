@@ -254,7 +254,7 @@ def restore_lines(gdf):
             gdf=pd.concat([gdf, gdf_slice]).reset_index(drop=True)
     return gdf
     # Я сделал это, но ценой чего...
-    #TODO: delete the smallest partitions, they make this too complicated
+    #TODO: delete partitions with smallest length (classification?), they make this too complicated
 
 #TODO: due to spatialindex implementation some segments not correct. need more tests with DE-9IM
 
@@ -449,13 +449,22 @@ def export_rawgdf_buf(gdf, name):
     gdf.set_crs(epsg=32635, inplace=True)
     gdf.to_file(filename=name, driver='GPKG')
     print(f'Exporting {name} finished')
+
+def scaling(scale):
+    Tgraph=0.02*scale/100
+    default_hallway_offset=100 # расстояние между нитками коридора
+    offset = default_hallway_offset*Tgraph/4
+    return offset, offset
+
 with open('tests_utm.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
+offset, buffer = scaling(25000)
+print(offset, buffer)
 gdf_TL=init_gpd(TL)
 gdf_exploded_TL=explode_gpd(gdf_TL)
 #print(gdf_exploded_TL.columns)
 print('Before buffering and cutting: ', len(gdf_exploded_TL))
-gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, 100)
+gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, buffer)
 print('After buffering and cutting: ', len(gdf_buffer_TL))
 #export_rawgdf(gdf_buffer_TL.copy(), 'tests_cut.gpkg')
 
@@ -472,10 +481,10 @@ print('After buffering and cutting: ', len(gdf_buffer_TL))
 
 # doubled proccess to avoid duplicates in multilinestrings in the whole hallway's
 
-gdf_processed=process_parts(process_parts(gdf_buffer_TL))
+gdf_processed=process_parts(gdf_buffer_TL)
 gdf_flipped=flip_order(gdf_processed)
 export_rawgdf(gdf_flipped.copy(), 'tests_flipped.gpkg')
-gdf_offset=parallel_offset(gdf_flipped, 50)
+gdf_offset=parallel_offset(gdf_flipped, offset)
 export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
 
 #TODO: для концов каждого сегмента провести линии в пределах буфера
