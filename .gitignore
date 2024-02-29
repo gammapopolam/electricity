@@ -12,3 +12,5 @@ tests_line.gpkg-wal
 tests_flip.gpkg
 tests_offset.gpkg
 tests_flipped.gpkg
+tests_cut.gpkg
+tests_cut_buf.gpkg
