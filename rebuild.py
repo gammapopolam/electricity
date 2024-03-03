@@ -205,12 +205,17 @@ def restore_lines(gdf):
     # Слайсы по уникальным выражениям
     # Если длина слайса больше 1, значит определить направление линии, перевести в точки, отсортировать по возрастанию/убыванию ОХ
     uniqs=list(sorted(gdf['part_id'].unique()))
+    ctr=0
     for uniq in uniqs:
+        ctr+=1
+        printProgressBar(ctr, len(uniqs), prefix = 'Restoring lines:', suffix = 'Complete', length = 50)
         gdf_slice=gdf[gdf['part_id']==uniq]
         #print(gdf_slice)
         origin_id=list(gdf_slice['origin_id'])[0]
         if len(gdf_slice)>1:
             parts=[list(x.coords) for x in gdf_slice.geometry]
+            if list(gdf_slice.geometry)[0].is_empty:
+                print(gdf_slice)
             d=get_direction(parts[0])
             df=pd.DataFrame(parts, columns=['line_p1', 'line_p2'])
             for j, val1 in df.iterrows():
@@ -263,7 +268,7 @@ def restore_lines(gdf):
 def process_parts(gdf, angle):
     l=len(gdf)
     for i, val1 in gdf.iterrows():
-        printProgressBar(i + 1, l, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        printProgressBar(i + 1, l, prefix = 'Processing lines:', suffix = 'Complete', length = 50)
         l1=val1.line
         l1_buff=val1.buffer
         indexed=val1.simple_index
@@ -380,7 +385,7 @@ def parallel_offset(gdf, dist):
             df['p2_y']=[df['line_p2'][i][1] for i in range(len(df))]
             if d<0:
                 d=d+360
-            print(d, end=' ')
+            #print(d, end=' ')
             if d>=45 and d<135:
                 flag='Ox_left'
                 df.sort_values(by='p1_x', ascending=True, inplace=True)
@@ -398,19 +403,19 @@ def parallel_offset(gdf, dist):
             lines=[[df['line_p1'][i], df['line_p2'][i]] for i in range(len(df))]
             offset_lines=[]
             if len(lines)%2==0:
-                print(flag, len(lines), part_ids)
+                #print(flag, len(lines), part_ids)
                 d=(distance*((len(lines)//2))-distance//2)
                 for i in range(len(lines)):
-                    print(i, d)
+                    #print(i, d)
                     offset=LineString(lines[i]).offset_curve(distance=d)
                     offset_lines.append(offset)
                     d-=distance
             elif len(lines)%2!=0:
                 d=distance*(len(lines)//2)
-                print(flag, len(lines), part_ids)
+                #print(flag, len(lines), part_ids)
                 for i in range(len(lines)):
                     #d=d*i
-                    print(i, d)
+                    #print(i, d)
                     offset=LineString(lines[i]).offset_curve(distance=d)
                     offset_lines.append(offset)
                     d-=distance
@@ -445,7 +450,7 @@ def scaling(scale):
     angle=default_angle*(offset*2/default_hallway_offset)
     return offset, buffer, angle
 
-with open('tests_utm.geojson', encoding='utf-8') as file:
+with open('net_utm2.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
 
 offset, buffer, angle = scaling(20000)
@@ -461,7 +466,7 @@ gdf_processed=process_parts(gdf_buffer_TL, angle)
 gdf_flipped=flip_order(gdf_processed, angle)
 export_rawgdf(gdf_flipped.copy(), 'tests_flipped.gpkg')
 gdf_offset=parallel_offset(gdf_flipped, offset)
-export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
+export_rawgdf(gdf_offset.copy(), 'net_offset.gpkg')
 
 # Hallway search can't be related to buffer size, it should be constant 
 # To approve it, need more tests. Now the buffer size is 3/4 of offset parameter 
