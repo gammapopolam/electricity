@@ -17,3 +17,6 @@ tests_cut_buf.gpkg
 net_offset.gpkg
 net_utm2.geojson
 net_utm2.qmd
+tests_offset_restored.gpkg
+restore_test.geojson
+restore_test.qmd

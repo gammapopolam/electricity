@@ -1,5 +1,5 @@
 
-from shapely import intersects, relate
+from shapely import intersects, relate, equals
 from shapely.geometry import MultiLineString, LineString
 #from shapely.ops import unary_union
 from shapely import unary_union, normalize
@@ -152,9 +152,9 @@ def explode_gpd(gdf):
     # Some mistake in gdf_exploded columns
 
     # FOR HOME-PC
-    #gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
+    gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
     # FOR LAPTOP
-    gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
+    #gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
 
     gdf_exploded['part_id']=gdf_exploded.origin_id.astype(str)+'_'+gdf_exploded.index.astype(str)
     gdf_exploded=gdf_exploded.set_geometry('line')
@@ -372,12 +372,12 @@ def flip_order(gdf, angle):
         direction=get_direction(l1)
         gdf.at[i, 'direction']=direction
     return gdf
-def parallel_offset(gdf, dist):
+def parallel_offset(gdf, gdf_source, dist):
     for j, val in gdf.iterrows():
         geometry=val.line
-        part_ids=val.part_id
         if geometry.geom_type=='MultiLineString':
             parts=[list(x.coords) for x in list(geometry.geoms)]
+            part_ids=[]
             d=get_direction(parts[0])
             flag=None
             df = pd.DataFrame(parts, columns=['line_p1', 'line_p2'])
@@ -399,6 +399,7 @@ def parallel_offset(gdf, dist):
                 df.sort_values(by='p1_x', ascending=False, inplace=True)
             elif (d>=315 and d<=405) or (d>-360 and d<-270) or (d<45 and d>-45):
                 flag='Oy_down'
+                # TODO: разобраться с сортировкой: иногда она неправильная (см. 29_41_0)
                 df.sort_values(by='p1_y', ascending=False, inplace=True)
             distance=dist
             df=df.reset_index(drop=True)
@@ -410,6 +411,8 @@ def parallel_offset(gdf, dist):
                 for i in range(len(lines)):
                     #print(i, d)
                     offset=LineString(lines[i]).offset_curve(distance=d)
+                    offset_part_id=get_part_id(LineString(lines[i]), gdf_source)
+                    part_ids.append(offset_part_id[0])
                     offset_lines.append(offset)
                     d-=distance
             elif len(lines)%2!=0:
@@ -419,11 +422,49 @@ def parallel_offset(gdf, dist):
                     #d=d*i
                     #print(i, d)
                     offset=LineString(lines[i]).offset_curve(distance=d)
+                    offset_part_id=get_part_id(LineString(lines[i]), gdf_source)
+                    part_ids.append(offset_part_id[0])
                     offset_lines.append(offset)
                     d-=distance
+            
             gdf.at[j, 'line']=MultiLineString(offset_lines)
             gdf.at[j, 'flag']=flag
+            gdf.at[j, 'part_id']=part_ids
+            #print(gdf.at[j, 'part_id'])
     return gdf
+def get_part_id(line, gdf_source):
+    for i, val in gdf_source.iterrows():
+        source_line=val.line
+        part_id=val.part_id
+        if equals(line, source_line):
+            return part_id
+def unpack_multilines(gdf_offset):
+    gdf_empty=gdf_offset.drop(gdf_offset.index)
+    
+    for i, val in gdf_offset.iterrows():
+        #print(len(gdf_empty))
+        geometry=val.line
+        if geometry.geom_type=='MultiLineString':
+            #gdf_offset.drop(index=val.index, inplace=True)
+            #print(gdf_empty.columns)
+            geoms=list(geometry.geoms)
+            part_ids=val.part_id
+            for j in range(len(geoms)):
+                line=geoms[j]
+                part_id=part_ids[j]
+                gdf_line=gpd.GeoDataFrame({'line': line, 'origin_id':part_id.split('_')[0], 'direction': None, 'flag':None, 'part_id':[[part_id]]})
+                #print(gdf_line)
+                gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
+        else:
+            gdf_line=gpd.GeoDataFrame({'line': geometry, 'origin_id':val.origin_id, 'direction': None, 'flag':None, 'part_id':[val.part_id]})
+            gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
+    gdf_fin=gdf_empty.reset_index(drop=True)
+    return gdf_fin
+def restore_lines(gdf_offset):
+    #TODO: восстановить линии по origin_id
+    # соседние прямые отрезков пересекаются на расстоянии не более чем максимальная длина отрезка
+    # если не выполняется, выкинуть отрезок и посмотреть новых соседей 
+    pass
 def export_rawgdf(gdf, name):
     # No buffer, no simple-index
     gdf['part_id']=gdf['part_id'].str.join(',')
@@ -458,17 +499,24 @@ with open('tests_utm.geojson', encoding='utf-8') as file:
 offset, buffer, angle = scaling(25000)
 print(offset, buffer, angle)
 gdf_TL=init_gpd(TL)
+
 gdf_exploded_TL=explode_gpd(gdf_TL)
 print('Before buffering and cutting: ', len(gdf_exploded_TL))
-gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, buffer) # 3/4 of offset param
+gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, buffer) # 3|2 of offset param
+gdf_source=gdf_buffer_TL.copy()
 print('After buffering and cutting: ', len(gdf_buffer_TL))
 export_rawgdf(gdf_buffer_TL.copy(), 'tests_cut.gpkg')
 export_rawgdf_buf(gdf_buffer_TL.copy(), 'tests_buffer.gpkg')
 gdf_processed=process_parts(gdf_buffer_TL, angle)
 gdf_flipped=flip_order(gdf_processed, angle)
 export_rawgdf(gdf_flipped.copy(), 'tests_flipped.gpkg')
-gdf_offset=parallel_offset(gdf_flipped, offset)
+gdf_offset=parallel_offset(gdf_flipped, gdf_source, offset)
+print('After restoring: ', len(gdf_offset))
+
+#print(gdf_offset)
+#print(gdf_offset)
 export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
+export_rawgdf(unpack_multilines(gdf_offset).copy(), 'tests_offset_restored.gpkg')
 
 # Hallway search can't be related to buffer size, it should be constant 
 # To approve it, need more tests. Now the buffer size is 3/4 of offset parameter 
