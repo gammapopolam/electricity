@@ -109,14 +109,16 @@ class Restrictions:
             return False
 #TODO: need more tests with DE-9IM
     def is_stream(self):
+        flag=False
         if relate(self.l1, self.l2)=='FF1FF0102' and self.angle_checker(self.l1, self.l2)=='hallway':
-            return True
-        #elif relate(self.l1, self.l2)=='1F1F00102' and angle_checker(self.l1, self.l2)=='hallway':
-        #    return True
+            flag=True
+        #elif relate(self.l1, self.l2)=='1F1F00102' and self.angle_checker(self.l1, self.l2)=='hallway':
+        #    flag=True
         elif relate(self.l1, self.l2)=='FF1F0F102' and self.angle_checker(self.l1, self.l2)=='hallway':
-            return True
+            flag=True
         else:
-            return False
+            flag=False
+        return flag
     def is_intersection(self):
         if relate(self.l1, self.l2)=='FF10F0102' or relate(self.l1, self.l2)=='0F1FF0102':
             return True
@@ -150,9 +152,9 @@ def explode_gpd(gdf):
     # Some mistake in gdf_exploded columns
 
     # FOR HOME-PC
-    gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
+    #gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
     # FOR LAPTOP
-    #gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
+    gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
 
     gdf_exploded['part_id']=gdf_exploded.origin_id.astype(str)+'_'+gdf_exploded.index.astype(str)
     gdf_exploded=gdf_exploded.set_geometry('line')
@@ -445,15 +447,15 @@ def scaling(scale):
     Tgraph=0.02*scale/100 # 5m for 25000
     default_hallway_offset=100 # расстояние между нитками коридора
     offset = default_hallway_offset*Tgraph/4 # 125m for 25000
-    buffer = offset*3/4
+    buffer = offset*1.5
     default_angle=3 # 3deg for 25000
     angle=default_angle*(offset*2/default_hallway_offset)
     return offset, buffer, angle
 
-with open('net_utm2.geojson', encoding='utf-8') as file:
+with open('tests_utm.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
 
-offset, buffer, angle = scaling(20000)
+offset, buffer, angle = scaling(25000)
 print(offset, buffer, angle)
 gdf_TL=init_gpd(TL)
 gdf_exploded_TL=explode_gpd(gdf_TL)
@@ -466,9 +468,11 @@ gdf_processed=process_parts(gdf_buffer_TL, angle)
 gdf_flipped=flip_order(gdf_processed, angle)
 export_rawgdf(gdf_flipped.copy(), 'tests_flipped.gpkg')
 gdf_offset=parallel_offset(gdf_flipped, offset)
-export_rawgdf(gdf_offset.copy(), 'net_offset.gpkg')
+export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
 
 # Hallway search can't be related to buffer size, it should be constant 
 # To approve it, need more tests. Now the buffer size is 3/4 of offset parameter 
 
 #TODO: restore lines from multilinestrings, provide info for segments by origin_id|part_id
+
+#DEBUG: 19_31_0 - problems with cutting lines if buffer is not equal offset
