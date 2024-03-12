@@ -20,3 +20,7 @@ net_utm2.qmd
 tests_offset_restored.gpkg
 restore_test.geojson
 restore_test.qmd
+rebuild_stage.py
+tests.ipynb
+tests_utm3.geojson
+tests_utm3.qmd

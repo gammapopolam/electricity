@@ -7,8 +7,22 @@ import json
 import geopandas as gpd
 import math
 import pandas as pd
-pd.options.mode.copy_on_write = True
+from sympy.solvers.solveset import linsolve
+from sympy import *
 
+pd.options.mode.copy_on_write = True
+class canline:
+    def __init__(self, line):
+        self.geom=line
+        self.p1, self.p2 = list(line.coords)
+        (x1, y1) = self.p1
+        (x2, y2) = self.p2
+        self.a=y1-y2
+        self.b=x2-x1
+        self.c=x1*y2-x2*y1
+    def get_canonical(self):
+        x, y = symbols('x, y')
+        return self.a*x+self.b*y+self.c 
 class Restrictions:
     def __init__(self, l1, l1_buff, l2, l2_buff, angle):
         self.l1=l1
@@ -166,7 +180,7 @@ def explode_gpd(gdf):
         
         gdf_exploded.iloc[i]={
             'line': line,
-            'origin_id': origin_id,
+            'origin_id': str(origin_id),
             'part_id': part_id
             }
     gdf_exploded['simple_index']=None
@@ -175,12 +189,17 @@ def buffers_gpd(gdf, distance):
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
     # этот маневр будет стоить нам семи лет
     buffers=gpd.GeoDataFrame(geometry=gdf['buffer'])
-    gdf=gdf.overlay(buffers, "union")
+    gdf=gdf.overlay(buffers, "intersection")
     gdf=restore_lines(gdf)
-    
+    print(gdf.columns)
+    gdf.rename(columns={'geometry': 'line'}, inplace=True)
+    print(gdf.columns)
+    gdf.set_geometry('line', inplace=True)
+    print(gdf.columns)
+    gdf.drop(columns=['buffer'], inplace=True)
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
     #print(gdf.columns)
-    gdf.rename(columns={'geometry': 'line'}, inplace=True)
+    
     for i, val in gdf.iterrows():
         line=val.line
         buffer=val.buffer
@@ -305,17 +324,7 @@ def process_parts(gdf, angle):
                 gdf.at[i, 'simple_index']=simple_index(l1_buff, gdf, i)
     return gdf
 
-#TODO: remove duplicates
-#origin is the object that has the biggest length of part_id
-#duplicates are the objects that contain items from origin part_id
 
-#is it significant to use?
-def remove_duplicates(gdf):
-    for i, val1 in gdf.iterrows():
-        parts=val1.part_id
-        if isinstance(parts, list):
-            gdf.drop(index=gdf[gdf.part_id.isin(parts)].index, inplace=True)
-    return gdf
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
     """
     Call in a loop to create terminal progress bar
@@ -451,15 +460,106 @@ def unpack_multilines(gdf_offset):
             part_ids=val.part_id
             for j in range(len(geoms)):
                 line=geoms[j]
-                part_id=part_ids[j]
+                if len(part_ids[j].split('_'))==3:
+                    part1=part_ids[j].split('_')[0]
+                    part2=part_ids[j].split('_')[1]
+                    part3=part_ids[j].split('_')[2]
+                   
+                elif len(part_ids[j].split('_'))==2:
+                    part1=part_ids[j].split('_')[0]
+                    part2=part_ids[j].split('_')[1]
+                    part3='0'
+                part_id=f'{part1.zfill(5)}_{part2.zfill(5)}_{part3.zfill(5)}'
+                #print(part_id)
                 gdf_line=gpd.GeoDataFrame({'line': line, 'origin_id':part_id.split('_')[0], 'direction': None, 'flag':None, 'part_id':[[part_id]]})
                 #print(gdf_line)
                 gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
         else:
-            gdf_line=gpd.GeoDataFrame({'line': geometry, 'origin_id':val.origin_id, 'direction': None, 'flag':None, 'part_id':[val.part_id]})
+            partid=val.part_id[0]
+            if len(partid.split('_'))==3:
+                part1=partid.split('_')[0]
+                part2=partid.split('_')[1]
+                part3=partid.split('_')[2]
+            elif len(partid.split('_'))==2:
+                part1=partid.split('_')[0]
+                part2=partid.split('_')[1]
+                part3='0'
+            part_id=f'{part1.zfill(5)}_{part2.zfill(5)}_{part3.zfill(5)}'
+            gdf_line=gpd.GeoDataFrame({'line': geometry, 'origin_id':part_id.split('_')[0], 'direction': None, 'flag':None, 'part_id':[[part_id]]})
             gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
     gdf_fin=gdf_empty.reset_index(drop=True)
     return gdf_fin
+def restore_net(gdf):
+    uniqs=list(sorted(gdf['origin_id'].unique()))
+    gdf_empty=gdf.drop(gdf.index)
+    gdf_points=None
+    for uniq in uniqs:
+        print(uniq)
+        gdf_origin=gdf.copy()
+        gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
+        l=len(gdf_origin)
+        origin_geom=[]
+        gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
+
+        line_cur=canline(gdf_origin.at[0, 'line'])
+        line_cur_partid=gdf_origin.at[0, 'part_id']
+
+        gdf_origin=gdf_origin.drop(index=0)
+        gdf_origin.reset_index(drop=True, inplace=True)
+        
+        while l!=0:
+
+            print(gdf_origin)
+            line_next_partid=gdf_origin.at[0, 'part_id']
+            line_next=canline(gdf_origin.at[0, 'line'])
+            
+            gdf_origin=gdf_origin.drop(index=0)
+            gdf_origin.reset_index(drop=True, inplace=True)
+            l=len(gdf_origin)
+
+            x, y = symbols('x, y')
+            #print(line_cur_partid, line_next_partid, linsolve([line_cur.get_canonical(), line_next.get_canonical()], (x, y)))
+            
+            if line_cur_partid!=line_next_partid:
+                if line_cur.geom.intersects(line_next.geom):
+                    p_int=line_cur.geom.intersection(line_next.geom)
+                    p_int=(p_int.x, p_int.y)
+                    origin_geom.append(p_int)
+                    line_cur=line_next
+                    line_cur_partid=line_next_partid
+                    continue
+                else:
+                    p_int, =linsolve([line_cur.get_canonical(), line_next.get_canonical()], (x, y))
+                    if line_cur.p1 not in origin_geom:
+                        origin_geom.append(line_cur.p1)
+
+                    dx1=abs(line_cur.p2[0]-p_int[0])
+                    dx2=abs(line_next.p1[0]-p_int[0])
+                    dy1=abs(line_cur.p2[1]-p_int[1])
+                    dy2=abs(line_next.p1[1]-p_int[1])
+                    dx=abs(line_cur.p2[0]-line_next.p1[0])
+                    dy=abs(line_cur.p2[1]-line_next.p1[1])
+                    #print(f'P1P2 endpoints: {dx, dy}')
+                    #print(f'P1Pint endpoints: {dx1, dy1}')
+                    #print(f'P2Pint endpoints: {dx2, dy2}')
+
+                    if dx1<dx and dx2<dx and dy1<dy and dy2<dy and dx!=dy:
+                        origin_geom.append(p_int)
+                    else:
+                        origin_geom.append(line_next.p1)
+
+                    if line_next.p2 not in origin_geom:
+                        origin_geom.append(line_next.p2)
+                    line_cur=line_next
+                    line_cur_partid=line_next_partid
+                    continue
+            
+        gdf_line=gpd.GeoDataFrame({'line': LineString(origin_geom), 'origin_id':[uniq], 'direction': None, 'flag':None, 'part_id':None})
+        gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
+    return gdf_empty
+
+
+
 def export_rawgdf(gdf, name):
     # No buffer, no simple-index
     gdf['part_id']=gdf['part_id'].str.join(',')
@@ -483,15 +583,15 @@ def scaling(scale):
     Tgraph=0.02*scale/100 # 5m for 25000
     default_hallway_offset=100 # расстояние между нитками коридора
     offset = default_hallway_offset*Tgraph/4 # 125m for 25000
-    buffer = offset*1.5
+    buffer = 200
     default_angle=3 # 3deg for 25000
-    angle=default_angle*(offset*2/default_hallway_offset)
+    angle=10
     return offset, buffer, angle
 
-with open('tests_utm.geojson', encoding='utf-8') as file:
+with open('tests_utm3.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
 
-offset, buffer, angle = scaling(25000)
+offset, buffer, angle = scaling(100000)
 print(offset, buffer, angle)
 gdf_TL=init_gpd(TL)
 
@@ -500,18 +600,18 @@ print('Before buffering and cutting: ', len(gdf_exploded_TL))
 gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, buffer) # 3|2 of offset param
 gdf_source=gdf_buffer_TL.copy()
 print('After buffering and cutting: ', len(gdf_buffer_TL))
-export_rawgdf(gdf_buffer_TL.copy(), 'tests_cut.gpkg')
-export_rawgdf_buf(gdf_buffer_TL.copy(), 'tests_buffer.gpkg')
+#export_rawgdf(gdf_buffer_TL.copy(), 'tests_cut.gpkg')
+#export_rawgdf_buf(gdf_buffer_TL.copy(), 'tests_buffer.gpkg')
 gdf_processed=process_parts(gdf_buffer_TL, angle)
 gdf_flipped=flip_order(gdf_processed, angle)
-export_rawgdf(gdf_flipped.copy(), 'tests_flipped.gpkg')
+#export_rawgdf(gdf_flipped.copy(), 'tests_flipped.gpkg')
 gdf_offset=parallel_offset(gdf_flipped, gdf_source, offset)
 print('After restoring: ', len(gdf_offset))
-
-#print(gdf_offset)
-#print(gdf_offset)
-export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
-export_rawgdf(unpack_multilines(gdf_offset).copy(), 'tests_offset_restored.gpkg')
+gdf_unpacked=unpack_multilines(gdf_offset)
+#export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
+export_rawgdf(gdf_unpacked.copy(), 'tests_offset_restored.gpkg')
+gdf_net=restore_net(gdf_unpacked)
+export_rawgdf(gdf_net.copy(), 'tests_offset_net.gpkg')
 
 # Hallway search can't be related to buffer size, it should be constant 
 # To approve it, need more tests. Now the buffer size is 3/4 of offset parameter 
