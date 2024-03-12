@@ -500,38 +500,54 @@ def restore_net(gdf):
         l=len(gdf_origin)
         origin_geom=[]
         gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
+        # TODO: инициализируем origin_geom, добавляем в него первый сегмент
+        # в цикле для всех других сегментов смотрим:
+        # нужно проанализировать точки сегментов на близость и по необходимости поменять местами координаты
+        # - пересекается ли origin_geom с сегментом? 
+        # - если пересекается, то добавить точки сегмента
 
+        # - если не пересекается, то пересекаются ли прямые этих сегментов в окне? (брать у origin_geom последние две точки)
+        # - если пересекаются, то добавить точки сегмента
+        # - если не пересекаются, то исключить сегмент
         line_cur=canline(gdf_origin.at[0, 'line'])
         line_cur_partid=gdf_origin.at[0, 'part_id']
-
+        if line_cur.p1 not in origin_geom:
+            origin_geom.append(line_cur.p1)
         gdf_origin=gdf_origin.drop(index=0)
         gdf_origin.reset_index(drop=True, inplace=True)
-        
+        x, y = symbols('x, y')
         while l!=0:
 
-            print(gdf_origin)
+            #print(gdf_origin)
             line_next_partid=gdf_origin.at[0, 'part_id']
             line_next=canline(gdf_origin.at[0, 'line'])
-            
+            print(line_cur_partid, line_next_partid)
             gdf_origin=gdf_origin.drop(index=0)
             gdf_origin.reset_index(drop=True, inplace=True)
             l=len(gdf_origin)
+            p2p1=Point(line_cur.p2).distance(Point(line_next.p1))
+            p2p2=Point(line_cur.p2).distance(Point(line_next.p2))
 
+            if p2p1>p2p2:
+                print('flip')
+                line_next=canline(LineString((line_next.p2, line_next.p1)))
             x, y = symbols('x, y')
             #print(line_cur_partid, line_next_partid, linsolve([line_cur.get_canonical(), line_next.get_canonical()], (x, y)))
             
             if line_cur_partid!=line_next_partid:
+                if line_next.p1 not in origin_geom:
+                    origin_geom.append(line_next.p1)
                 if line_cur.geom.intersects(line_next.geom):
+                    print('segments intersect')
                     p_int=line_cur.geom.intersection(line_next.geom)
                     p_int=(p_int.x, p_int.y)
                     origin_geom.append(p_int)
-                    line_cur=line_next
+                    line_cur=canline(LineString((p_int, line_next.p2)))
                     line_cur_partid=line_next_partid
                     continue
                 else:
                     p_int, =linsolve([line_cur.get_canonical(), line_next.get_canonical()], (x, y))
-                    if line_cur.p1 not in origin_geom:
-                        origin_geom.append(line_cur.p1)
+                    
 
                     dx1=abs(line_cur.p2[0]-p_int[0])
                     dx2=abs(line_next.p1[0]-p_int[0])
@@ -544,15 +560,19 @@ def restore_net(gdf):
                     #print(f'P2Pint endpoints: {dx2, dy2}')
 
                     if dx1<dx and dx2<dx and dy1<dy and dy2<dy and dx!=dy:
+                        print('lines intersect')
                         origin_geom.append(p_int)
+                        line_cur=canline(LineString((p_int, line_next.p2)))
                     else:
-                        origin_geom.append(line_next.p1)
+                        line_cur=line_next
+                    line_cur_partid=line_next_partid
+                    
 
                     if line_next.p2 not in origin_geom:
                         origin_geom.append(line_next.p2)
-                    line_cur=line_next
-                    line_cur_partid=line_next_partid
-                    continue
+                    
+                    
+                    
             
         gdf_line=gpd.GeoDataFrame({'line': LineString(origin_geom), 'origin_id':[uniq], 'direction': None, 'flag':None, 'part_id':None})
         gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
