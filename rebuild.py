@@ -150,11 +150,12 @@ def explode_gpd(gdf):
     .explode())
     gdf_exploded=line_segs.to_frame().join(gdf.drop(columns="geometry")).reset_index(drop=True)
     # Some mistake in gdf_exploded columns
-
+    try:
     # FOR HOME-PC
-    gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
+        gdf_exploded.rename(columns={'id':'origin_id', 'geometry': 'line'}, inplace=True)
     # FOR LAPTOP
-    #gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
+    except:
+        gdf_exploded.rename(columns={'id':'origin_id', 0: 'line'}, inplace=True)
 
     gdf_exploded['part_id']=gdf_exploded.origin_id.astype(str)+'_'+gdf_exploded.index.astype(str)
     gdf_exploded=gdf_exploded.set_geometry('line')
@@ -172,12 +173,11 @@ def explode_gpd(gdf):
     return gdf_exploded
 def buffers_gpd(gdf, distance):
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
-    #print(gdf)
     # этот маневр будет стоить нам семи лет
     buffers=gpd.GeoDataFrame(geometry=gdf['buffer'])
     gdf=gdf.overlay(buffers, "union")
-    
     gdf=restore_lines(gdf)
+    
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
     #print(gdf.columns)
     gdf.rename(columns={'geometry': 'line'}, inplace=True)
@@ -212,12 +212,11 @@ def restore_lines(gdf):
         ctr+=1
         printProgressBar(ctr, len(uniqs), prefix = 'Restoring lines:', suffix = 'Complete', length = 50)
         gdf_slice=gdf[gdf['part_id']==uniq]
-        #print(gdf_slice)
         origin_id=list(gdf_slice['origin_id'])[0]
         if len(gdf_slice)>1:
             parts=[list(x.coords) for x in gdf_slice.geometry]
-            if list(gdf_slice.geometry)[0].is_empty:
-                print(gdf_slice)
+            #if list(gdf_slice.geometry)[0].is_empty:
+            #    print(gdf_slice)
             d=get_direction(parts[0])
             df=pd.DataFrame(parts, columns=['line_p1', 'line_p2'])
             for j, val1 in df.iterrows():
@@ -389,6 +388,7 @@ def parallel_offset(gdf, gdf_source, dist):
                 d=d+360
             #print(d, end=' ')
             if d>=45 and d<135:
+                # TODO: разобраться с сортировкой: иногда она неправильная (см. 29_471_0)
                 flag='Ox_left'
                 df.sort_values(by='p1_x', ascending=True, inplace=True)
             elif d>=135 and d<225:
@@ -460,11 +460,6 @@ def unpack_multilines(gdf_offset):
             gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
     gdf_fin=gdf_empty.reset_index(drop=True)
     return gdf_fin
-def restore_lines(gdf_offset):
-    #TODO: восстановить линии по origin_id
-    # соседние прямые отрезков пересекаются на расстоянии не более чем максимальная длина отрезка
-    # если не выполняется, выкинуть отрезок и посмотреть новых соседей 
-    pass
 def export_rawgdf(gdf, name):
     # No buffer, no simple-index
     gdf['part_id']=gdf['part_id'].str.join(',')
