@@ -632,7 +632,7 @@ def recover_net(gdf):
             #print(gdf_origin)
             line_next_partid=gdf_origin.at[0, 'part_id']
             line_next=canline(gdf_origin.at[0, 'line'])
-            print(line_cur_partid, line_next_partid)
+            #print(line_cur_partid, line_next_partid)
             gdf_origin=gdf_origin.drop(index=0)
             gdf_origin.reset_index(drop=True, inplace=True)
             l=len(gdf_origin)
@@ -640,7 +640,7 @@ def recover_net(gdf):
             p2p2=Point(line_cur.p2).distance(Point(line_next.p2))
 
             if p2p1>p2p2:
-                print('flip')
+                #print('flip')
                 line_next=canline(LineString((line_next.p2, line_next.p1)))
             x, y = symbols('x, y')
             #print(line_cur_partid, line_next_partid, linsolve([line_cur.get_canonical(), line_next.get_canonical()], (x, y)))
@@ -649,7 +649,7 @@ def recover_net(gdf):
                 if line_next.p1 not in origin_geom:
                     origin_geom.append(line_next.p1)
                 if line_cur.geom.intersects(line_next.geom):
-                    print('net-segments intersect')
+                    #print('net-segments intersect')
                     p_int=line_cur.geom.intersection(line_next.geom)
                     if p_int.geom_type=='Point':
                         p_int=(p_int.x, p_int.y)
@@ -724,7 +724,7 @@ def scaling(scale):
     angle=10
     return offset, buffer, angle
 
-with open('tests_utm3.geojson', encoding='utf-8') as file:
+with open('tests_utm.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
 
 offset, buffer, angle = scaling(25000)

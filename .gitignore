@@ -1,10 +1,8 @@
 exploded.gpkg
-net_utm.geojson
 net_utm.qmd
 tests_buffer.gpkg
 tests_line.gpkg
 tests_utm.qmd
-tests_utm2.geojson
 tests_utm2.qmd
 tests_utm.qmd
 tests_line.gpkg-shm
@@ -15,14 +13,12 @@ tests_flipped.gpkg
 tests_cut.gpkg
 tests_cut_buf.gpkg
 net_offset.gpkg
-net_utm2.geojson
 net_utm2.qmd
 tests_offset_restored.gpkg
 restore_test.geojson
 restore_test.qmd
 rebuild_stage.py
 tests.ipynb
-tests_utm3.geojson
 tests_utm3.qmd
 tests_offset_recover.gpkg
 tests_offset_net.gpkg
