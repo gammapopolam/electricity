@@ -24,3 +24,5 @@ rebuild_stage.py
 tests.ipynb
 tests_utm3.geojson
 tests_utm3.qmd
+tests_offset_recover.gpkg
+tests_offset_net.gpkg
