@@ -1,162 +1,13 @@
-
-from shapely import intersects, relate, equals
-from shapely.geometry import MultiLineString, LineString
-#from shapely.ops import unary_union
-from shapely import unary_union, normalize
-import json
 import geopandas as gpd
-import math
-import pandas as pd
+from io_handler import *
+from hallway_recognition import *
+from vector_algs_handler import *
+from intersection_handler import *
+from shapely import unary_union, normalize
+from shapely.geometry import Point
 from sympy.solvers.solveset import linsolve
 from sympy import *
 
-pd.options.mode.copy_on_write = True
-class canline:
-    def __init__(self, line):
-        self.geom=line
-        self.p1, self.p2 = list(line.coords)
-        (x1, y1) = self.p1
-        (x2, y2) = self.p2
-        self.a=y1-y2
-        self.b=x2-x1
-        self.c=x1*y2-x2*y1
-    def get_canonical(self):
-        x, y = symbols('x, y')
-        return self.a*x+self.b*y+self.c 
-class Restrictions:
-    def __init__(self, l1, l1_buff, l2, l2_buff, angle):
-        self.l1=l1
-        self.l2=l2
-        self.l1_buff=l1_buff
-        self.l2_buff=l2_buff
-        self.flag = 'undefined'
-        self.angle=angle
-    def angle_checker(self, l1, l2):
-        flag='undefined'
-        if l1.geom_type=='MultiLineString' and l2.geom_type=='MultiLineString':
-            l1_geoms=list(l1.geoms)
-            l2_geoms=list(l2.geoms)
-            for geom in l1_geoms:
-                l1=geom.coords
-                for geom2 in l2_geoms:
-                    l2=geom2.coords
-                    m1 = (l1[1][1]-l1[0][1])/(l1[1][0]-l1[0][0])
-                    m2 = (l2[1][1]-l2[0][1])/(l2[1][0]-l2[0][0])
-                    angle_rad = abs(math.atan(m1) - math.atan(m2))
-                    angle_deg = angle_rad*180/math.pi
-                    #print('angle diff:', abs(angle_deg))
-                    if abs(angle_deg)<self.angle or abs(angle_deg)>(180-self.angle):
-                        flag='hallway'
-        elif l1.geom_type=='MultiLineString' and l2.geom_type=='LineString':
-            l1_geoms=list(l1.geoms)
-            l2=list(l2.coords)
-            for geom in l1_geoms:
-                l1=geom.coords
-                m1 = (l1[1][1]-l1[0][1])/(l1[1][0]-l1[0][0])
-                m2 = (l2[1][1]-l2[0][1])/(l2[1][0]-l2[0][0])
-                angle_rad = abs(math.atan(m1) - math.atan(m2))
-                angle_deg = angle_rad*180/math.pi
-                #print('angle diff:', abs(angle_deg))
-                if abs(angle_deg)<self.angle or abs(angle_deg)>(180-self.angle):
-                    flag='hallway'
-        elif l1.geom_type=='LineString' and l2.geom_type=='MultiLineString':
-            l2_geoms=list(l2.geoms)
-            l1=list(l1.coords)
-            for geom in l2_geoms:
-                l2=geom.coords
-                m1 = (l1[1][1]-l1[0][1])/(l1[1][0]-l1[0][0])
-                m2 = (l2[1][1]-l2[0][1])/(l2[1][0]-l2[0][0])
-                angle_rad = abs(math.atan(m1) - math.atan(m2))
-                angle_deg = angle_rad*180/math.pi
-                #print('angle diff:', abs(angle_deg))
-                if abs(angle_deg)<self.angle or abs(angle_deg)>(180-self.angle):
-                    flag='hallway'
-        else:
-            l1=list(l1.coords)
-            l2=list(l2.coords)
-            m1 = (l1[1][1]-l1[0][1])/(l1[1][0]-l1[0][0])
-            m2 = (l2[1][1]-l2[0][1])/(l2[1][0]-l2[0][0])
-            angle_rad = abs(math.atan(m1) - math.atan(m2))
-            angle_deg = angle_rad*180/math.pi
-            #print('angle diff:', abs(angle_deg))
-            if abs(angle_deg)<self.angle or abs(angle_deg)>(180-self.angle):
-                flag='hallway'
-        return flag
-    def check(self):
-        if self.is_buffers_intersect()==False:
-            self.flag='undefined'
-        else:
-            if self.is_branch()==True:
-                self.flag='branch'
-            if self.is_stream()==True:
-                self.flag='stream'
-            
-            if self.is_intersection()==True:
-                self.flag='intersection'
-        return self.flag
-    def to_multiline(self, flag):
-        if flag=='stream':
-            if self.l1.geom_type=='MultiLineString':
-                if self.l2.geom_type=='MultiLineString':
-                    self.multil=MultiLineString([*self.l1.geoms, *self.l2.geoms])
-                elif self.l2.geom_type=='LineString':
-                    self.multil=MultiLineString([*self.l1.geoms, self.l2])
-            elif self.l1.geom_type=='LineString':
-                if self.l2.geom_type=='MultiLineString':
-                    self.multil=MultiLineString([self.l1, *self.l2.geoms])
-                elif self.l2.geom_type=='LineString':
-                    self.multil=MultiLineString([self.l1, self.l2])
-        return self.multil
-    def Resolve_multipart_geometry():
-        pass
-    def is_buffers_intersect(self):
-        if intersects(self.l1_buff, self.l2_buff)==True and self.l1_buff.intersection(self.l2_buff).area>(self.l2_buff.area/100*15):
-            return True
-        else:
-            return False
-    def terminus_part():
-        pass
-    def is_branch(self):
-        if relate(self.l1, self.l2)=='FF1F00102':
-            return True
-        else:
-            return False
-#TODO: need more tests with DE-9IM
-    def is_stream(self):
-        flag=False
-        if relate(self.l1, self.l2)=='FF1FF0102' and self.angle_checker(self.l1, self.l2)=='hallway':
-            flag=True
-        #elif relate(self.l1, self.l2)=='1F1F00102' and self.angle_checker(self.l1, self.l2)=='hallway':
-        #    flag=True
-        elif relate(self.l1, self.l2)=='FF1F0F102' and self.angle_checker(self.l1, self.l2)=='hallway':
-            flag=True
-        else:
-            flag=False
-        return flag
-    def is_intersection(self):
-        if relate(self.l1, self.l2)=='FF10F0102' or relate(self.l1, self.l2)=='0F1FF0102':
-            return True
-        else:
-            return False
-    def single():
-        pass
-def get_direction(l1):
-    dx1, dy1 = l1[1][0]-l1[0][0], l1[1][1]-l1[0][1]
-    r1=math.atan2(dy1,dx1)*180/math.pi
-    if dx1>0 and dy1>0:
-        a1=r1
-    elif dx1<0 and dy1>0:
-        a1=180-r1
-    elif dx1<0 and dy1<0:
-        a1=r1-180
-    elif dx1>0 and dy1<0:
-        a1=360-r1
-    return a1
-
-
-def init_gpd(TL):
-    gdf=gpd.GeoDataFrame.from_features(TL['features'])
-    return gdf
 def explode_gpd(gdf):
     line_segs = gpd.GeoSeries(gdf["geometry"]
     .apply(lambda g: [g] if isinstance(g, LineString) else [p for p in g.geoms])
@@ -177,14 +28,14 @@ def explode_gpd(gdf):
         part_id=val.part_id
         line=val.line
         origin_id=val.origin_id
-        
         gdf_exploded.iloc[i]={
             'line': line,
             'origin_id': str(origin_id),
-            'part_id': part_id
+            'part_id': part_id.split('_')[0].zfill(5)+'_'+part_id.split('_')[1].zfill(5)+'_00000',
+            'simple_index': None
             }
-    gdf_exploded['simple_index']=None
     return gdf_exploded
+
 def buffers_gpd(gdf, distance):
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
     # этот маневр будет стоить нам семи лет
@@ -212,9 +63,6 @@ def buffers_gpd(gdf, distance):
         gdf.at[i, 'part_id']=[part_id]
         gdf.at[i, 'simple_index']=indexed
     return gdf
-
-
-
 def simple_index(buffer, gdf, i):
     gdf_slice=gdf[gdf.index!=i]
     simple_index=dict(buffer.intersects(gdf_slice['buffer']))
@@ -278,8 +126,6 @@ def restore_lines(gdf):
                 gdf_slice.at[j, 'origin_id']=origin_id
             gdf=pd.concat([gdf, gdf_slice]).reset_index(drop=True)
     return gdf
-    # Я сделал это, но ценой чего...
-
 def process_parts(gdf, angle):
     l=len(gdf)
     for i, val1 in gdf.iterrows():
@@ -297,8 +143,8 @@ def process_parts(gdf, angle):
             l2=val2.line
             l2_buff=val2.buffer
             
-            restr=Restrictions(l1, l1_buff, l2, l2_buff, angle)
-            flag=restr.check()
+            search=HallwaySearch(l1, l1_buff, l2, l2_buff, angle)
+            flag=search.solve()
             if flag=='stream':
                 if isinstance(val1_part_id, str) and isinstance(val2.part_id, str):
                     part_ids=[val1_part_id, val2.part_id]
@@ -308,7 +154,7 @@ def process_parts(gdf, angle):
                     part_ids=[*val1_part_id, val2.part_id]
                 elif isinstance(val1_part_id, list) and isinstance(val2.part_id, list):
                     part_ids=[*val1_part_id, *val2.part_id]
-                l1=restr.to_multiline(flag)
+                l1=search.to_multiline(flag)
                 l1_buff=normalize(unary_union([l1_buff, l2_buff]))
                 val1_part_id=list(set(part_ids))
                 gdf=gdf[gdf.line!=val2.line]
@@ -318,17 +164,6 @@ def process_parts(gdf, angle):
                 gdf.at[i, 'part_id']=val1_part_id
                 gdf.at[i, 'simple_index']=simple_index(l1_buff, gdf, i)
     return gdf
-
-
-def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
-    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
-    # Print New Line on Complete
-    if iteration == total: 
-        print()
-                    
 def flip_order(gdf, angle):
     for i, val in gdf.iterrows():
         geometry=val.line
@@ -345,10 +180,6 @@ def flip_order(gdf, angle):
                 #print(a1, a2)
                 if abs(a1-a2)>angle*2:
                     l2=[l2[1], l2[0]]
-                    #print('flipped', a1, a2)
-                else:
-                    #print('not flipped', a1, a2)
-                    pass
                 geom_slice_index=geoms_slice.index(geom_slice)
                 geoms_slice[geom_slice_index]=LineString(l2)
             geoms_slice.append(base_geom)
@@ -363,29 +194,6 @@ def flip_order(gdf, angle):
         direction=get_direction(l1)
         gdf.at[i, 'direction']=direction
     return gdf
-def area(q,p,r):
-    return 1/2*(q[0]*p[1]-p[0]*q[1]+p[0]*r[1]-r[0]*p[1]+r[0]*q[1]-q[0]*r[1])
-def side(p1, p3, p2):
-    area123=area(p1,p3,p2)
-    #print(area123)
-    if area123==0:
-        return 0
-    elif area123<0:
-        return -1 #справа
-    elif area123>0:
-        return 1 #слева
-def line_side(line_cur, line_hall):
-    p1, p2 = line_cur
-    p3, p4 = line_hall
-    #print(LineString((p1, p2)), LineString((p3, p4)))
-    #if side(p1,p3,p2)>0 and side(p1,p4, p2)>0 and 
-    if side(p1, p3, p2)>0 and side(p1, p4, p2)>0 and side(p3, p1, p4)<0 and side(p3, p2, p4)<0:
-        return 1
-    elif side(p1, p3, p2)<0 and side(p1, p4, p2)<0 and side(p3, p1, p4)>0 and side(p3, p2, p4)>0:
-        return -1
-    else:
-        return 0
-    
 def parallel_offset(gdf, gdf_source, dist):
     for j, val in gdf.iterrows():
         geometry=val.line
@@ -411,7 +219,6 @@ def parallel_offset(gdf, gdf_source, dist):
             # сейчас в sides ключ: индекс, значение: [1,0,-1,-1] (как пример)
             distance=dist
             offset_lines=[]
-
             for index in range(l):
                 
                 side1=sides[index]
@@ -446,11 +253,8 @@ def unpack_multilines(gdf_offset):
     gdf_empty=gdf_offset.drop(gdf_offset.index)
     
     for i, val in gdf_offset.iterrows():
-        #print(len(gdf_empty))
         geometry=val.line
         if geometry.geom_type=='MultiLineString':
-            #gdf_offset.drop(index=val.index, inplace=True)
-            #print(gdf_empty.columns)
             geoms=list(geometry.geoms)
             part_ids=val.part_id
             for j in range(len(geoms)):
@@ -459,15 +263,12 @@ def unpack_multilines(gdf_offset):
                     part1=part_ids[j].split('_')[0]
                     part2=part_ids[j].split('_')[1]
                     part3=part_ids[j].split('_')[2]
-                   
                 elif len(part_ids[j].split('_'))==2:
                     part1=part_ids[j].split('_')[0]
                     part2=part_ids[j].split('_')[1]
                     part3='0'
                 part_id=f'{part1.zfill(5)}_{part2.zfill(5)}_{part3.zfill(5)}'
-                #print(part_id)
                 gdf_line=gpd.GeoDataFrame({'line': line, 'origin_id':part_id.split('_')[0], 'direction': None, 'flag':None, 'part_id':[[part_id]]})
-                #print(gdf_line)
                 gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
         else:
             partid=val.part_id[0]
@@ -486,42 +287,31 @@ def unpack_multilines(gdf_offset):
     return gdf_fin
 def recover_line_dir(gdf):
     uniqs=list(sorted(gdf['origin_id'].unique()))
-    gdf_empty=gdf.drop(gdf.index)
-    gdf_points=None
     for uniq in uniqs:
         gdf_origin=gdf.copy()
         gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
         gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
         gdf_origin['part_id2']=gdf_origin['part_id'].apply(lambda x: x[0].split('_')[1])
         gdf_origin['part_id3']=gdf_origin['part_id'].apply(lambda x: x[0].split('_')[2])
-        #print(gdf_origin)
         uniqs_part2=list(sorted(gdf_origin['part_id2'].unique()))
         for current in uniqs_part2:
             l=len(gdf_origin[gdf_origin['part_id2']==current])
             if l>1:
                 ctr=1
                 back=str(int(current)-ctr).zfill(5)
-                #print(uniq, back, current)
                 back_geom = gdf_origin[gdf_origin['part_id2']==back]
                 
                 while len(back_geom)==0:
                     ctr+=1
                     back=str(int(current)-ctr).zfill(5)
-                    #print(uniq, back, current)
                     back_geom = gdf_origin[gdf_origin['part_id2']==back]
                 current_geoms=gdf_origin[gdf_origin['part_id2']==current]
-                #print(back_geom, '\n', current_geoms)
                 flipped=[]
-                dist=math.inf
-                #print(list(back_geom.geometry))
-                #print(back_geom['line'])
                 b2=Point(list(list(back_geom['line'])[0].coords)[1])
-                for j, current in current_geoms.iterrows():
-                    #print(current)
+                for _, current in current_geoms.iterrows():
                     c1=Point(list(current['line'].coords)[0])
                     newdist=float(b2.distance(c1))
                     flipped.append({'part_id2': current['part_id2'], 'part_id3': current['part_id3'], 'distance': newdist, 'geometry': current['line']})
-                #print('flip', flipped)
                 sorted_flipped=sorted(flipped, key=lambda d: d['distance'])
                 sorted_flipped2=[]
                 if flipped[0]!=sorted_flipped[0]:
@@ -532,15 +322,13 @@ def recover_line_dir(gdf):
                         sorted_flipped2.append(elems)
                 else:
                     sorted_flipped2=sorted_flipped
-                #print('sort', sorted_flipped2)
                 for elems in sorted_flipped2:
                     full_part_id=f'{uniq}_{elems['part_id2']}_{elems['part_id3']}'
-                    #print(gdf)
-                    #print(gdf.loc[gdf['part_id'].isin([[full_part_id]]), 'line'])
-                    #gdf.loc[gdf['line']==elems['geometry'], 'part_id']==full_part_id
                     gdf.loc[gdf['part_id'].isin([[full_part_id]]), 'line']=elems['geometry']
     return gdf 
 def recover_net(gdf):
+    return 0
+
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
     gdf_points=None
@@ -634,15 +422,8 @@ def recover_net(gdf):
         gdf_line=gpd.GeoDataFrame({'line': LineString(origin_geom), 'origin_id':[uniq], 'direction': None, 'flag':None, 'part_id':None})
         gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
     return gdf_empty
-
-def recover_net_TSP(gdf):
-    # Короче смысл в том, что для каждой из нитей разорванной сети вытянуть вершины и решить задачу коммивояжера.
-    # По идее, оптимальный путь по нитке должен быть один
-    # После того как получили линию оптимального пути:
-    # пройтись по каждому сегменту пути, отбросить те, которых не существовало в разорванной сети
-    # если они существуют в разорванной сети, то нужно флипнуть в соответствии с линией оптимального пути
-    # 
-    # Потом в цикле для n и n+1 сегментов восстанавливать пересечение 
+def recover_net_new(gdf):
+    # Нужна новая логика для восстановления
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
     gdf_points=None
@@ -652,30 +433,20 @@ def recover_net_TSP(gdf):
         gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
         l=len(gdf_origin)
         origin_geom=[]
-        points=gdf_origin['line']
-    pass
-
-
-def export_rawgdf(gdf, name):
-    # No buffer, no simple-index
-    gdf['part_id']=gdf['part_id'].str.join(',')
-    gdf.drop('simple_index', axis=1, inplace=True)
-    gdf.drop('buffer', axis=1, inplace=True)
-    gdf.set_geometry('line', inplace=True)
-    gdf.set_crs(epsg=32635, inplace=True)
-    gdf.to_file(filename=name, driver='GPKG')
-    print(f'Exporting {name} finished')
-def export_rawgdf_buf(gdf, name):
-    # Buffer, no simple-index
-    gdf['part_id']=gdf['part_id'].str.join(',')
-    gdf.drop('simple_index', axis=1, inplace=True)
-    gdf.drop('line', axis=1, inplace=True)
-    gdf.set_geometry('buffer', inplace=True)
-    gdf.set_crs(epsg=32635, inplace=True)
-    gdf.to_file(filename=name, driver='GPKG')
-    print(f'Exporting {name} finished')
-
-def scaling(scale):
+        gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
+        lines=list(gdf_origin['line'])
+        line_current=lines.pop(0)
+        while len(lines)!=1:
+            line_next=lines.pop(0)
+            solved=segment_solver(line_current, line_next)
+            if solved is not None:
+                line_current, line_next = solved
+                origin_geom.append(*list(line_current.coords))
+                origin_geom.append(*list(line_next.coords))
+            line_current=LineString((origin_geom[-2], origin_geom[-1]))
+        line_end=lines.pop()
+        origin_geom.append(list(line_end.coords)[1])
+def config(scale):
     Tgraph=0.02*scale/100 # 5m for 25000
     default_hallway_offset=100 # расстояние между нитками коридора
     offset = default_hallway_offset*Tgraph/4 # 125m for 25000
@@ -683,37 +454,16 @@ def scaling(scale):
     default_angle=3 # 3deg for 25000
     angle=8
     return offset, buffer, angle
-
-with open('samples/tests_utm3.geojson', encoding='utf-8') as file:
-    TL=json.loads(file.read())
-
-offset, buffer, angle = scaling(100000)
-print(offset, buffer, angle)
-gdf_TL=init_gpd(TL)
-
-gdf_exploded_TL=explode_gpd(gdf_TL)
-print('Before buffering and cutting: ', len(gdf_exploded_TL))
-gdf_buffer_TL=buffers_gpd(gdf_exploded_TL, buffer) # 3|2 of offset param
-gdf_source=gdf_buffer_TL.copy()
-print('After buffering and cutting: ', len(gdf_buffer_TL))
-export_rawgdf(gdf_buffer_TL.copy(), 'tests_cut.gpkg')
-#export_rawgdf_buf(gdf_buffer_TL.copy(), 'tests_buffer.gpkg')
-gdf_processed=process_parts(gdf_buffer_TL, angle)
+offset, buffer, angle = config(25000)
+gdf=importer('samples/tests_utm3.geojson', epsg=32635)
+gdf_exploded=explode_gpd(gdf)
+gdf_buffer=buffers_gpd(gdf_exploded, buffer)
+gdf_source=gdf_buffer.copy()
+#hallway search
+gdf_processed=process_parts(gdf_buffer, angle)
 gdf_flipped=flip_order(gdf_processed, angle)
-export_rawgdf(gdf_flipped.copy(), 'tests_flipped.gpkg')
 gdf_offset=parallel_offset(gdf_flipped, gdf_source, offset)
-print('After restoring: ', len(gdf_offset))
 gdf_unpacked=unpack_multilines(gdf_offset)
-export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
-export_rawgdf(gdf_unpacked.copy(), 'tests_offset_restored.gpkg')
 gdf_recover=recover_line_dir(gdf_unpacked)
-export_rawgdf(gdf_recover.copy(), 'tests_offset_recover.gpkg')
+exporter(gdf_recover, name='tests_recover.gpkg')
 gdf_net=recover_net(gdf_recover)
-export_rawgdf(gdf_net.copy(), 'tests_offset_net.gpkg')
-
-# Hallway search can't be related to buffer size, it should be constant 
-# To approve it, need more tests. Now the buffer size is 3/4 of offset parameter 
-
-#TODO: restore lines from multilinestrings, provide info for segments by origin_id|part_id
-
-#DEBUG: 19_31_0 - problems with cutting lines if buffer is not equal offset
