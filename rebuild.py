@@ -277,13 +277,8 @@ def restore_lines(gdf):
                 gdf_slice.at[j,'part_id']=part_id
                 gdf_slice.at[j, 'origin_id']=origin_id
             gdf=pd.concat([gdf, gdf_slice]).reset_index(drop=True)
-    # drop parts with smaller length
-    
     return gdf
     # Я сделал это, но ценой чего...
-    #TODO: delete partitions with smallest length (classification?), they make this too complicated
-
-#TODO: due to spatialindex implementation some segments not correct. need more tests with DE-9IM
 
 def process_parts(gdf, angle):
     l=len(gdf)
@@ -326,18 +321,6 @@ def process_parts(gdf, angle):
 
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
     percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
@@ -410,15 +393,6 @@ def parallel_offset(gdf, gdf_source, dist):
             parts=[list(x.coords) for x in list(geometry.geoms)]
             part_ids=[]
             flag=None
-            '''
-            d=get_direction(parts[0])
-            
-            df = pd.DataFrame(parts, columns=['line_p1', 'line_p2'])
-            df['p1_x']=[df['line_p1'][i][0] for i in range(len(df))]
-            df['p1_y']=[df['line_p1'][i][1] for i in range(len(df))]
-            df['p2_x']=[df['line_p2'][i][0] for i in range(len(df))]
-            df['p2_y']=[df['line_p2'][i][1] for i in range(len(df))]
-            '''
             l=len(parts)
             sides=dict()
             for k in range(l):
@@ -457,48 +431,6 @@ def parallel_offset(gdf, gdf_source, dist):
             # сейчас необходима вспомогательная функция side для всего коридора
             # список с флагами -1,0,1 ( справа, текущая, слева)
             # в зависимости от того, какое значение в результате side, помещать либо в начало либо в конец
-            '''
-            if d>=45 and d<135:
-                # TODO: разобраться с сортировкой: иногда она неправильная (см. 29_471_0)
-                flag='Ox_left'
-                df.sort_values(by='p1_x', ascending=True, inplace=True)
-            elif d>=135 and d<225:
-                flag='Oy_up'
-                df.sort_values(by='p1_y', ascending=True, inplace=True)
-            elif (d>=225 and d<315) or (d<=495 and d>405):
-                flag='Ox_right'
-                df.sort_values(by='p1_x', ascending=False, inplace=True)
-            elif (d>=315 and d<=405) or (d>-360 and d<-270) or (d<45 and d>-45):
-                flag='Oy_down'
-                # TODO: разобраться с сортировкой: иногда она неправильная (см. 29_41_0)
-                df.sort_values(by='p1_y', ascending=False, inplace=True)
-            
-            distance=dist
-            df=df.reset_index(drop=True)
-            lines=[[df['line_p1'][i], df['line_p2'][i]] for i in range(len(df))]
-            offset_lines=[]
-            if len(lines)%2==0:
-                #print(flag, len(lines), part_ids)
-                d=(distance*((len(lines)//2))-distance//2)
-                for i in range(len(lines)):
-                    #print(i, d)
-                    offset=LineString(lines[i]).offset_curve(distance=d)
-                    offset_part_id=get_part_id(LineString(lines[i]), gdf_source)
-                    part_ids.append(offset_part_id[0])
-                    offset_lines.append(offset)
-                    d-=distance
-            elif len(lines)%2!=0:
-                d=distance*(len(lines)//2)
-                #print(flag, len(lines), part_ids)
-                for i in range(len(lines)):
-                    #d=d*i
-                    #print(i, d)
-                    offset=LineString(lines[i]).offset_curve(distance=d)
-                    offset_part_id=get_part_id(LineString(lines[i]), gdf_source)
-                    part_ids.append(offset_part_id[0])
-                    offset_lines.append(offset)
-                    d-=distance
-            '''
             gdf.at[j, 'line']=MultiLineString(offset_lines)
             gdf.at[j, 'flag']=flag
             gdf.at[j, 'part_id']=part_ids
@@ -553,53 +485,61 @@ def unpack_multilines(gdf_offset):
     gdf_fin=gdf_empty.reset_index(drop=True)
     return gdf_fin
 def recover_line_dir(gdf):
-    
-    # NOT READY YET
-
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
     gdf_points=None
     for uniq in uniqs:
-        #print(uniq)
         gdf_origin=gdf.copy()
+        gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
         gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
-        lines=list(gdf_origin['line'])
-        line=lines.pop(0)
-        part2=0
-        part_id=f'{uniq.zfill(5)}_{str(part2).zfill(5)}_{'00000'.zfill(5)}'
-        #recovered=[{'line':line, 'origin_id': uniq, 'part_id': part_id}]
-        gdf_recovered=gpd.GeoDataFrame({'line': line, 'origin_id':uniq, 'direction': None, 'flag':None, 'part_id':[[part_id]]})
-        gdf_empty=pd.concat([gdf_empty, gdf_recovered], ignore_index=True, axis=0)
-        mindist=math.inf
-        for nline in lines:
-            
-            line_p1, line_p2 = list(line.coords)
-            line_p3, line_p4 = list(nline.coords)
-            p2p3=Point(line_p2).distance(Point(line_p3))
-            p2p4=Point(line_p2).distance(Point(line_p4))
-            if p2p3>p2p4:
-                if mindist>p2p3:
-                    mindist=p2p3
-                    minline=LineString((line_p3, line_p4))
+        gdf_origin['part_id2']=gdf_origin['part_id'].apply(lambda x: x[0].split('_')[1])
+        gdf_origin['part_id3']=gdf_origin['part_id'].apply(lambda x: x[0].split('_')[2])
+        #print(gdf_origin)
+        uniqs_part2=list(sorted(gdf_origin['part_id2'].unique()))
+        for current in uniqs_part2:
+            l=len(gdf_origin[gdf_origin['part_id2']==current])
+            if l>1:
+                ctr=1
+                back=str(int(current)-ctr).zfill(5)
+                #print(uniq, back, current)
+                back_geom = gdf_origin[gdf_origin['part_id2']==back]
+                
+                while len(back_geom)==0:
+                    ctr+=1
+                    back=str(int(current)-ctr).zfill(5)
+                    #print(uniq, back, current)
+                    back_geom = gdf_origin[gdf_origin['part_id2']==back]
+                current_geoms=gdf_origin[gdf_origin['part_id2']==current]
+                #print(back_geom, '\n', current_geoms)
+                flipped=[]
+                dist=math.inf
+                #print(list(back_geom.geometry))
+                #print(back_geom['line'])
+                b2=Point(list(list(back_geom['line'])[0].coords)[1])
+                for j, current in current_geoms.iterrows():
+                    #print(current)
+                    c1=Point(list(current['line'].coords)[0])
+                    newdist=float(b2.distance(c1))
+                    flipped.append({'part_id2': current['part_id2'], 'part_id3': current['part_id3'], 'distance': newdist, 'geometry': current['line']})
+                #print('flip', flipped)
+                sorted_flipped=sorted(flipped, key=lambda d: d['distance'])
+                sorted_flipped2=[]
+                if flipped[0]!=sorted_flipped[0]:
+                    for elems in sorted_flipped:
+                        l=len(sorted_flipped)
+                        new_part_id3=str(l-int(elems['part_id3'])-1).zfill(5)
+                        elems['part_id3']=new_part_id3
+                        sorted_flipped2.append(elems)
                 else:
-                    part2+=1
-                    part_id=f'{uniq.zfill(5)}_{str(part2).zfill(5)}_{'00000'.zfill(5)}'
-                    mindist=math.inf
-                    gdf_recovered=gpd.GeoDataFrame({'line': minline, 'origin_id':uniq, 'direction': None, 'flag':None, 'part_id':[[part_id]]})
-                    gdf_empty=pd.concat([gdf_empty, gdf_recovered], ignore_index=True, axis=0)
-            else:
-                if mindist>p2p4:
-                    mindist=p2p4
-                    minline=LineString((line_p4, line_p3))
-                else:
-                    part2+=1
-                    part_id=f'{uniq.zfill(5)}_{str(part2).zfill(5)}_{'00000'.zfill(5)}'
-                    mindist=math.inf
-                    gdf_recovered=gpd.GeoDataFrame({'line': minline, 'origin_id':uniq, 'direction': None, 'flag':None, 'part_id':[[part_id]]})
-                    gdf_empty=pd.concat([gdf_empty, gdf_recovered], ignore_index=True, axis=0)
-            
-    gdf_fin=gdf_empty.reset_index(drop=True)
-    return gdf_fin
+                    sorted_flipped2=sorted_flipped
+                #print('sort', sorted_flipped2)
+                for elems in sorted_flipped2:
+                    full_part_id=f'{uniq}_{elems['part_id2']}_{elems['part_id3']}'
+                    #print(gdf)
+                    #print(gdf.loc[gdf['part_id'].isin([[full_part_id]]), 'line'])
+                    #gdf.loc[gdf['line']==elems['geometry'], 'part_id']==full_part_id
+                    gdf.loc[gdf['part_id'].isin([[full_part_id]]), 'line']=elems['geometry']
+    return gdf 
 def recover_net(gdf):
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
@@ -626,22 +566,24 @@ def recover_net(gdf):
         origin_geom.append(line_cur.p2)
         gdf_origin=gdf_origin.drop(index=0)
         gdf_origin.reset_index(drop=True, inplace=True)
-        x, y = symbols('x, y')
         while l!=0:
-            line_cur=canline(gdf_origin.at[0, 'line'])
+            line_cur=canline(LineString((origin_geom[-2], origin_geom[-1])))
             #print(gdf_origin)
             line_next_partid=gdf_origin.at[0, 'part_id']
             line_next=canline(gdf_origin.at[0, 'line'])
-            #print(line_cur_partid, line_next_partid)
+            print(line_cur_partid, line_next_partid)
             gdf_origin=gdf_origin.drop(index=0)
             gdf_origin.reset_index(drop=True, inplace=True)
             l=len(gdf_origin)
             p2p1=Point(line_cur.p2).distance(Point(line_next.p1))
             p2p2=Point(line_cur.p2).distance(Point(line_next.p2))
-
-            if p2p1>p2p2:
+            p1p1=Point(line_cur.p1).distance(Point(line_next.p1))
+            p1p2=Point(line_cur.p1).distance(Point(line_next.p2))
+            if p2p1>p2p2 or p2p1>p1p1:
                 #print('flip')
                 line_next=canline(LineString((line_next.p2, line_next.p1)))
+            #elif p2p1>p1p1:
+            #    line_next=canline(LineString((line_next.p, line_next)))
             x, y = symbols('x, y')
             #print(line_cur_partid, line_next_partid, linsolve([line_cur.get_canonical(), line_next.get_canonical()], (x, y)))
             
@@ -649,10 +591,12 @@ def recover_net(gdf):
                 if line_next.p1 not in origin_geom:
                     origin_geom.append(line_next.p1)
                 if line_cur.geom.intersects(line_next.geom):
-                    #print('net-segments intersect')
+                    print('net-segments intersect')
                     p_int=line_cur.geom.intersection(line_next.geom)
+                    print(p_int)
                     if p_int.geom_type=='Point':
                         p_int=(p_int.x, p_int.y)
+                        origin_geom.pop(-1)
                         origin_geom.append(p_int)
                         if line_next.p2 not in origin_geom:
                             origin_geom.append(line_next.p2)
@@ -672,9 +616,13 @@ def recover_net(gdf):
                     #print(f'P1Pint endpoints: {dx1, dy1}')
                     #print(f'P2Pint endpoints: {dx2, dy2}')
 
-                    if dx1<dx and dx2<dx and dy1<dy and dy2<dy and dx!=dy:
+                    if dx1<dx*2 and dx2<dx*2 and dy1<dy*2 and dy2<dy*2 and dx!=dy:
                         print('lines intersect')
+                        print(p_int)
+                        origin_geom.pop(-1)
                         origin_geom.append(p_int)
+                        if line_next.p2 not in origin_geom:
+                            origin_geom.append(line_next.p2)
                         #line_cur=canline(LineString((p_int, line_next.p2)))
                     else:
                         continue
@@ -684,8 +632,7 @@ def recover_net(gdf):
                     line_cur_partid=line_next_partid
                     
 
-                    if line_next.p2 not in origin_geom:
-                        origin_geom.append(line_next.p2)
+                    
                     
                     
                     
@@ -694,6 +641,25 @@ def recover_net(gdf):
         gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
     return gdf_empty
 
+def recover_net_TSP(gdf):
+    # Короче смысл в том, что для каждой из нитей разорванной сети вытянуть вершины и решить задачу коммивояжера.
+    # По идее, оптимальный путь по нитке должен быть один
+    # После того как получили линию оптимального пути:
+    # пройтись по каждому сегменту пути, отбросить те, которых не существовало в разорванной сети
+    # если они существуют в разорванной сети, то нужно флипнуть в соответствии с линией оптимального пути
+    # 
+    # Потом в цикле для n и n+1 сегментов восстанавливать пересечение 
+    uniqs=list(sorted(gdf['origin_id'].unique()))
+    gdf_empty=gdf.drop(gdf.index)
+    gdf_points=None
+    for uniq in uniqs:
+        #print(uniq)
+        gdf_origin=gdf.copy()
+        gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
+        l=len(gdf_origin)
+        origin_geom=[]
+        points=gdf_origin['line']
+    pass
 
 
 def export_rawgdf(gdf, name):
@@ -724,7 +690,7 @@ def scaling(scale):
     angle=10
     return offset, buffer, angle
 
-with open('tests_utm.geojson', encoding='utf-8') as file:
+with open('samples/tests_utm3.geojson', encoding='utf-8') as file:
     TL=json.loads(file.read())
 
 offset, buffer, angle = scaling(25000)
@@ -746,9 +712,9 @@ print('After restoring: ', len(gdf_offset))
 gdf_unpacked=unpack_multilines(gdf_offset)
 export_rawgdf(gdf_offset.copy(), 'tests_offset.gpkg')
 export_rawgdf(gdf_unpacked.copy(), 'tests_offset_restored.gpkg')
-#gdf_recover=recover_line_dir(gdf_unpacked)
-#export_rawgdf(gdf_recover.copy(), 'tests_offset_recover.gpkg')
-gdf_net=recover_net(gdf_unpacked)
+gdf_recover=recover_line_dir(gdf_unpacked)
+export_rawgdf(gdf_recover.copy(), 'tests_offset_recover.gpkg')
+gdf_net=recover_net(gdf_recover)
 export_rawgdf(gdf_net.copy(), 'tests_offset_net.gpkg')
 
 # Hallway search can't be related to buffer size, it should be constant 

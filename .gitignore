@@ -22,3 +22,6 @@ tests.ipynb
 tests_utm3.qmd
 tests_offset_recover.gpkg
 tests_offset_net.gpkg
+TSP.py
+flip_ids.gpkg
+flip_ids.py
