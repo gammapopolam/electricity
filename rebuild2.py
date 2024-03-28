@@ -4,7 +4,7 @@ from hallway_recognition import *
 from vector_algs_handler import *
 from intersection_handler import *
 from shapely import unary_union, normalize
-from shapely.geometry import Point
+from shapely.geometry import Point, MultiLineString, LineString
 from sympy.solvers.solveset import linsolve
 from sympy import *
 
@@ -31,9 +31,9 @@ def explode_gpd(gdf):
         gdf_exploded.iloc[i]={
             'line': line,
             'origin_id': str(origin_id),
-            'part_id': part_id.split('_')[0].zfill(5)+'_'+part_id.split('_')[1].zfill(5)+'_00000',
-            'simple_index': None
+            'part_id': part_id
             }
+    gdf_exploded['simple_index']=None
     return gdf_exploded
 
 def buffers_gpd(gdf, distance):
@@ -146,6 +146,7 @@ def process_parts(gdf, angle):
             search=HallwaySearch(l1, l1_buff, l2, l2_buff, angle)
             flag=search.solve()
             if flag=='stream':
+                #print('stream')
                 if isinstance(val1_part_id, str) and isinstance(val2.part_id, str):
                     part_ids=[val1_part_id, val2.part_id]
                 elif isinstance(val1_part_id, str) and isinstance(val2.part_id, list):
@@ -197,6 +198,7 @@ def flip_order(gdf, angle):
 def parallel_offset(gdf, gdf_source, dist):
     for j, val in gdf.iterrows():
         geometry=val.line
+        #print(val.part_id)
         if geometry.geom_type=='MultiLineString':
             parts=[list(x.coords) for x in list(geometry.geoms)]
             part_ids=[]
@@ -219,20 +221,22 @@ def parallel_offset(gdf, gdf_source, dist):
             # сейчас в sides ключ: индекс, значение: [1,0,-1,-1] (как пример)
             distance=dist
             offset_lines=[]
+            #print(sides)
             for index in range(l):
-                
                 side1=sides[index]
                 line=parts[index]
                 osp = side1.index(0)
                 d = distance * (len(side1)//2 - osp)
                 if l%2==0:
                     d = d - distance//2
+                #print(d, end=' ')
                 offset=LineString(line).offset_curve(distance=d)
                 offset_part_id=get_part_id(LineString(line), gdf_source)
                 #print(side1, d, offset_part_id)
                 part_ids.append(offset_part_id[0])
                 
                 offset_lines.append(offset)
+            #print('')
             #print(d, end=' ')
             # Раньше был оффсет по направлениям коридора
             # сейчас необходима вспомогательная функция side для всего коридора
@@ -327,8 +331,6 @@ def recover_line_dir(gdf):
                     gdf.loc[gdf['part_id'].isin([[full_part_id]]), 'line']=elems['geometry']
     return gdf 
 def recover_net(gdf):
-    return 0
-
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
     gdf_points=None
@@ -336,116 +338,49 @@ def recover_net(gdf):
         #print(uniq)
         gdf_origin=gdf.copy()
         gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
+        #print(gdf_origin)
         l=len(gdf_origin)
+        #print(l)
         origin_geom=[]
         gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
-        # TODO: инициализируем origin_geom, добавляем в него первый сегмент
-        # в цикле для всех других сегментов смотрим:
-        # нужно проанализировать точки сегментов на близость и по необходимости поменять местами координаты
-        # - пересекается ли origin_geom с сегментом? 
-        # - если пересекается, то добавить точки сегмента
+        lines=list(gdf_origin['line']) # correct sort
 
-        # - если не пересекается, то пересекаются ли прямые этих сегментов в окне? (брать у origin_geom последние две точки)
-        # - если пересекаются, то добавить точки сегмента
-        # - если не пересекаются, то исключить сегмент
-        line_cur=canline(gdf_origin.at[0, 'line'])
-        line_cur_partid=gdf_origin.at[0, 'part_id']
-        origin_geom.append(line_cur.p1)
-        origin_geom.append(line_cur.p2)
-        gdf_origin=gdf_origin.drop(index=0)
-        gdf_origin.reset_index(drop=True, inplace=True)
-        while l!=0:
-            line_cur=canline(LineString((origin_geom[-2], origin_geom[-1])))
-            #print(gdf_origin)
-            line_next_partid=gdf_origin.at[0, 'part_id']
-            line_next=canline(gdf_origin.at[0, 'line'])
-            print(line_cur_partid, line_next_partid)
-            gdf_origin=gdf_origin.drop(index=0)
-            gdf_origin.reset_index(drop=True, inplace=True)
-            l=len(gdf_origin)
-            p2p1=Point(line_cur.p2).distance(Point(line_next.p1))
-            p2p2=Point(line_cur.p2).distance(Point(line_next.p2))
-            p1p1=Point(line_cur.p1).distance(Point(line_next.p1))
-            p1p2=Point(line_cur.p1).distance(Point(line_next.p2))
-            if p2p1>p2p2 or p2p1>p1p1:
-                #print('flip')
-                line_next=canline(LineString((line_next.p2, line_next.p1)))
-            #elif p2p1>p1p1:
-            #    line_next=canline(LineString((line_next.p, line_next)))
-            x, y = symbols('x, y')
-            #print(line_cur_partid, line_next_partid, linsolve([line_cur.get_canonical(), line_next.get_canonical()], (x, y)))
-            
-            if line_cur_partid!=line_next_partid:
-                if line_next.p1 not in origin_geom:
-                    origin_geom.append(line_next.p1)
-                if line_cur.geom.intersects(line_next.geom):
-                    print('net-segments intersect')
-                    p_int=line_cur.geom.intersection(line_next.geom)
-                    print(p_int)
-                    if p_int.geom_type=='Point':
-                        p_int=(p_int.x, p_int.y)
-                        origin_geom.pop(-1)
-                        origin_geom.append(p_int)
-                        if line_next.p2 not in origin_geom:
-                            origin_geom.append(line_next.p2)
-                    #line_cur=canline(LineString((p_int, line_next.p2)))
-                    line_cur_partid=line_next_partid
-                else:
-                    p_int, =linsolve([line_cur.get_canonical(), line_next.get_canonical()], (x, y))
-                    
-
-                    dx1=abs(line_cur.p2[0]-p_int[0])
-                    dx2=abs(line_next.p1[0]-p_int[0])
-                    dy1=abs(line_cur.p2[1]-p_int[1])
-                    dy2=abs(line_next.p1[1]-p_int[1])
-                    dx=abs(line_cur.p2[0]-line_next.p1[0])
-                    dy=abs(line_cur.p2[1]-line_next.p1[1])
-                    #print(f'P1P2 endpoints: {dx, dy}')
-                    #print(f'P1Pint endpoints: {dx1, dy1}')
-                    #print(f'P2Pint endpoints: {dx2, dy2}')
-
-                    if dx1<dx*2 and dx2<dx*2 and dy1<dy*2 and dy2<dy*2 and dx!=dy:
-                        print('lines intersect')
-                        print(p_int)
-                        origin_geom.pop(-1)
-                        origin_geom.append(p_int)
-                        if line_next.p2 not in origin_geom:
-                            origin_geom.append(line_next.p2)
-                        #line_cur=canline(LineString((p_int, line_next.p2)))
-                    else:
-                        continue
-                        #origin_geom.pop(-1)
-                        #line_cur=canline(LineString((p_int, line_next.p2)))
-                        #line_cur=line_next
-                    line_cur_partid=line_next_partid
-
-        gdf_line=gpd.GeoDataFrame({'line': LineString(origin_geom), 'origin_id':[uniq], 'direction': None, 'flag':None, 'part_id':None})
-        gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
-    return gdf_empty
-def recover_net_new(gdf):
-    # Нужна новая логика для восстановления
-    uniqs=list(sorted(gdf['origin_id'].unique()))
-    gdf_empty=gdf.drop(gdf.index)
-    gdf_points=None
-    for uniq in uniqs:
-        #print(uniq)
-        gdf_origin=gdf.copy()
-        gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
-        l=len(gdf_origin)
         origin_geom=[]
-        gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
-        lines=list(gdf_origin['line'])
-        line_current=lines.pop(0)
+        first=lines.pop(0)
+        line=lines.pop(0)
+        first, second=flip_segments(first, line, first=True)
+        origin_geom.append(list(first.coords)[0])
+        origin_geom.append(list(line.coords)[0])
+        origin_geom.append(list(line.coords)[1])
+        lines = list(filter(lambda x: (x.length>200), lines))
         while len(lines)!=1:
-            line_next=lines.pop(0)
+            line_current = LineString((origin_geom[-2], origin_geom[-1]))
+            line_next=lines[0]
+            #print(origin_geom)
+            line_current, line_next = flip_segments(line_current, line_next)
+            #print(line_current, line_next)
+            #print(len(lines))
             solved=segment_solver(line_current, line_next)
             if solved is not None:
                 line_current, line_next = solved
-                origin_geom.append(*list(line_current.coords))
-                origin_geom.append(*list(line_next.coords))
-            line_current=LineString((origin_geom[-2], origin_geom[-1]))
-        line_end=lines.pop()
-        origin_geom.append(list(line_end.coords)[1])
+                origin_geom.pop()
+                origin_geom.pop()
+                lines.pop(0)
+                if list(line_current.coords)[0] not in origin_geom:
+                    origin_geom.append(list(line_current.coords)[0])
+                if list(line_current.coords)[1] not in origin_geom:
+                    origin_geom.append(list(line_current.coords)[1])
+                if list(line_next.coords)[1] not in origin_geom:
+                    origin_geom.append(list(line_next.coords)[1])
+            else:
+                origin_geom.pop()
+                continue
+
+        gdf_line=gpd.GeoDataFrame({'line': LineString(origin_geom), 'origin_id':[uniq], 'direction': None, 'flag':None, 'part_id':None})
+        gdf_line.set_geometry('line', inplace=True)
+        gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
+    return gdf_empty
+
 def config(scale):
     Tgraph=0.02*scale/100 # 5m for 25000
     default_hallway_offset=100 # расстояние между нитками коридора
@@ -454,7 +389,8 @@ def config(scale):
     default_angle=3 # 3deg for 25000
     angle=8
     return offset, buffer, angle
-offset, buffer, angle = config(25000)
+offset, buffer, angle = config(50000)
+print(offset)
 gdf=importer('samples/tests_utm3.geojson', epsg=32635)
 gdf_exploded=explode_gpd(gdf)
 gdf_buffer=buffers_gpd(gdf_exploded, buffer)
@@ -464,6 +400,8 @@ gdf_processed=process_parts(gdf_buffer, angle)
 gdf_flipped=flip_order(gdf_processed, angle)
 gdf_offset=parallel_offset(gdf_flipped, gdf_source, offset)
 gdf_unpacked=unpack_multilines(gdf_offset)
+exporter(gdf_unpacked.copy(), name='tests_offset_restored.gpkg', keep_debug=True, epsg=32635)
 gdf_recover=recover_line_dir(gdf_unpacked)
-exporter(gdf_recover, name='tests_recover.gpkg')
+exporter(gdf_recover.copy(), name='tests_offset_recover.gpkg', keep_debug=True, epsg=32635)
 gdf_net=recover_net(gdf_recover)
+exporter(gdf_net.copy(), name='tests_offset_net.gpkg', keep_debug=True, epsg=32635)

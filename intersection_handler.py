@@ -1,4 +1,4 @@
-#%%
+
 from sympy.solvers.solveset import linsolve
 from shapely import intersects, relate, equals, box
 from shapely.geometry import MultiLineString, LineString, MultiPoint, Point
@@ -23,7 +23,6 @@ class Equation:
     def get_straight(self):
         x, y = symbols('x, y')
         return self.a*x+self.b*y+self.c
-#%%
 
 def flip_segments(line_current, line_next, first=False):
     #p1c, p2c - current line point 1/2
@@ -58,9 +57,9 @@ def flip_segments(line_current, line_next, first=False):
 def segment_solver(line_current, line_next):
     # Если отрезки имеют пересечение, то новая геометрия - с общей вершиной в точке пересечения линий
     if line_current.intersects(line_next) or list(line_current.coords)[1]==list(line_next.coords)[0]:
-        print('segments intersect')
+        #print('segments intersect')
         p_int=line_current.intersection(line_next)
-        print(p_int)
+        #print(p_int)
         if p_int.geom_type=='Point':
             line_current=LineString((list(line_current.coords)[0], (p_int.x, p_int.y)))
             line_next=LineString(((p_int.x, p_int.y), list(line_next.coords)[1]))
@@ -82,29 +81,13 @@ def segment_solver(line_current, line_next):
         #print(shapely.geometry.Point(eq_cur.p2))
         #if shapely.geometry.Point(eq_cur.p2).within(bbox) and shapely.geometry.Point(p_int).within(bbox) and shapely.geometry.Point(eq_next.p1).within(bbox):
         if shapely.geometry.Point(p_int).within(bbox):
-            print('straightlines intersect')
+            #print('straightlines intersect')
             line_current=LineString((list(line_current.coords)[0], (p_int[0], p_int[1])))
             line_next=LineString(((p_int[0], p_int[1]), list(line_next.coords)[1]))
             return (line_current, line_next)
         else:
             return None
-        '''
-        dx1=abs(eq_cur.p2[0]-p_int[0])
-        dx2=abs(eq_next.p1[0]-p_int[0])
-        dy1=abs(eq_cur.p2[1]-p_int[1])
-        dy2=abs(eq_next.p1[1]-p_int[1])
-        dx=abs(eq_cur.p2[0]-eq_next.p1[0])
-        dy=abs(eq_cur.p2[1]-eq_next.p1[1])
-        print(dx*2, dy*2)
-        print(dx1, dy1, dx2, dy2)
-        if dx1<dx*2 and dx2<dx*2 and dy1<dy*2 and dy2<dy*2 and dx!=dy:
-            print('straightlines intersect')
-            line_current=LineString((list(line_current.coords)[0], (p_int[0], p_int[1])))
-            line_next=LineString(((p_int[0], p_int[1]), list(line_next.coords)[1]))
-            return (line_current, line_next)
-        else:
-            return None'''
-        
+'''        
 gdf=gpd.read_file('tests_offset_recover.gpkg')
 uniq='00030'
 gdf_origin=gdf[gdf['origin_id']==uniq]
@@ -145,3 +128,4 @@ LineString(origin_geom)
 print(LineString(origin_geom))
 
 # %%
+'''

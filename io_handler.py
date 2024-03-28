@@ -9,19 +9,25 @@ def importer(name, epsg=32635):
     gdf.set_crs(epsg=epsg, inplace=True)
     return gdf
 
-def exporter(gdf, name, driver='GPKG', keep_debug=True):
+def exporter(gdf, name, driver='GPKG', keep_debug=True, epsg=32635):
     if keep_debug:
         gdf['part_id']=gdf['part_id'].str.join(',')
         #gdf.drop('simple_index', axis=1, inplace=True)
-        gdf.drop('buffer', axis=1, inplace=True)
+        if 'buffer' in list(gdf.columns):
+            gdf.drop('buffer', axis=1, inplace=True)
     else:
         gdf.drop('part_id', axis=1, inplace=True)
         gdf.drop('simple_index', axis=1, inplace=True)
         gdf.drop('buffer', axis=1, inplace=True)
         gdf.drop('direction', axis=1, inplace=True)
         gdf.drop('flag', axis=1, inplace=True)
-    gdf.set_geometry('line', inplace=True)
-    gdf.to_file(filename=name, driver=driver)
+    #print(gdf)
+    #if 'geometry' in list(gdf.columns):
+    #print(gdf.columns)
+    gdf_new=gdf.set_geometry('line')
+    gdf_new.set_crs(epsg=epsg, inplace=True)
+    #print(gdf_new.columns)
+    gdf_new.to_file(filename=name, driver=driver)
     print(f'Exporting {name} finished')
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):

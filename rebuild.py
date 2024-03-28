@@ -635,26 +635,6 @@ def recover_net(gdf):
         gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
     return gdf_empty
 
-def recover_net_TSP(gdf):
-    # Короче смысл в том, что для каждой из нитей разорванной сети вытянуть вершины и решить задачу коммивояжера.
-    # По идее, оптимальный путь по нитке должен быть один
-    # После того как получили линию оптимального пути:
-    # пройтись по каждому сегменту пути, отбросить те, которых не существовало в разорванной сети
-    # если они существуют в разорванной сети, то нужно флипнуть в соответствии с линией оптимального пути
-    # 
-    # Потом в цикле для n и n+1 сегментов восстанавливать пересечение 
-    uniqs=list(sorted(gdf['origin_id'].unique()))
-    gdf_empty=gdf.drop(gdf.index)
-    gdf_points=None
-    for uniq in uniqs:
-        #print(uniq)
-        gdf_origin=gdf.copy()
-        gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
-        l=len(gdf_origin)
-        origin_geom=[]
-        points=gdf_origin['line']
-    pass
-
 
 def export_rawgdf(gdf, name):
     # No buffer, no simple-index
