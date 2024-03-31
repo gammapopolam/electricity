@@ -84,6 +84,7 @@ def restore_lines(gdf):
             parts=[list(x.coords) for x in gdf_slice.geometry]
             #if list(gdf_slice.geometry)[0].is_empty:
             #    print(gdf_slice)
+            #print(parts)
             d=get_direction(parts[0])
             df=pd.DataFrame(parts, columns=['line_p1', 'line_p2'])
             for j, val1 in df.iterrows():
@@ -334,7 +335,10 @@ def recover_net(gdf):
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
     gdf_points=None
+    i=0
     for uniq in uniqs:
+        printProgressBar(i + 1, len(uniqs), prefix = 'Recovering lines:', suffix = 'Complete', length = 50)
+        i+=1
         #print(uniq)
         gdf_origin=gdf.copy()
         gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
@@ -353,7 +357,7 @@ def recover_net(gdf):
         origin_geom.append(list(line.coords)[0])
         origin_geom.append(list(line.coords)[1])
         lines = list(filter(lambda x: (x.length>200), lines))
-        while len(lines)!=1:
+        while len(lines)>1:
             line_current = LineString((origin_geom[-2], origin_geom[-1]))
             line_next=lines[0]
             #print(origin_geom)
@@ -375,7 +379,66 @@ def recover_net(gdf):
             else:
                 origin_geom.pop()
                 continue
+            '''
+        while len(lines)>2:
+            line_current = LineString((origin_geom[-2], origin_geom[-1]))
+            line_next=lines[0]
+            line_current, line_next = flip_segments(line_current, line_next)
+            solved=segment_solver(line_current, line_next)
+            #print('current', line_current, line_next)
+            line_current1 = LineString((origin_geom[-2], origin_geom[-1]))
+            line_next1=lines[1]
+            line_current1, line_next1 = flip_segments(line_current1, line_next1)
+            solved_test1=segment_solver(line_current1, line_next1)
+            #print('test', line_current1, line_next1)
+            #print(origin_geom)
+            if solved is not None:
+                line_current, line_next = solved
+                if solved_test1 is not None:
+                    line_current1, line_next1 = solved_test1
 
+                    p_test = list(line_current.coords)[0]
+                    p_int = list(line_next.coords)[0]
+                    p_int1 = list(line_next1.coords)[0]
+                    #print('test1', LineString((p_test, p_int)), LineString((p_test, p_int1)))
+                    if LineString((p_test, p_int)).length<LineString((p_test, p_int1)).length:
+                        #print('test false')
+                        origin_geom.pop()
+                        origin_geom.pop()
+                        lines.pop(0)
+                        if list(line_current.coords)[0] not in origin_geom:
+                            origin_geom.append(list(line_current.coords)[0])
+                        if list(line_current.coords)[1] not in origin_geom:
+                            origin_geom.append(list(line_current.coords)[1])
+                        if list(line_next.coords)[1] not in origin_geom:
+                            origin_geom.append(list(line_next.coords)[1])
+                    else:
+                        #print('test true')
+                        #line_current, line_next = line_current1, line_next1
+                        origin_geom.pop()
+                        origin_geom.pop()
+                        lines.pop(0)
+                        lines.pop(0)
+                        if list(line_current1.coords)[0] not in origin_geom:
+                            origin_geom.append(list(line_current1.coords)[0])
+                        if list(line_current1.coords)[1] not in origin_geom:
+                            origin_geom.append(list(line_current1.coords)[1])
+                        if list(line_next1.coords)[1] not in origin_geom:
+                            origin_geom.append(list(line_next1.coords)[1])
+                else:
+                    origin_geom.pop()
+                    origin_geom.pop()
+                    lines.pop(0)
+                    if list(line_current.coords)[0] not in origin_geom:
+                        origin_geom.append(list(line_current.coords)[0])
+                    if list(line_current.coords)[1] not in origin_geom:
+                        origin_geom.append(list(line_current.coords)[1])
+                    if list(line_next.coords)[1] not in origin_geom:
+                        origin_geom.append(list(line_next.coords)[1])
+            else:
+                origin_geom.pop()
+                continue
+        '''
         gdf_line=gpd.GeoDataFrame({'line': LineString(origin_geom), 'origin_id':[uniq], 'direction': None, 'flag':None, 'part_id':None})
         gdf_line.set_geometry('line', inplace=True)
         gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
@@ -391,7 +454,7 @@ def config(scale):
     return offset, buffer, angle
 offset, buffer, angle = config(50000)
 print(offset)
-gdf=importer('samples/tests_utm3.geojson', epsg=32635)
+gdf=importer('samples/tests_utm2.geojson', epsg=32635)
 gdf_exploded=explode_gpd(gdf)
 gdf_buffer=buffers_gpd(gdf_exploded, buffer)
 gdf_source=gdf_buffer.copy()
