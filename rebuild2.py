@@ -292,7 +292,10 @@ def unpack_multilines(gdf_offset):
     return gdf_fin
 def recover_line_dir(gdf):
     uniqs=list(sorted(gdf['origin_id'].unique()))
+    i=0
     for uniq in uniqs:
+        printProgressBar(i + 1, len(uniqs), prefix = 'Recovering lines:', suffix = 'Complete', length = 50)
+        i+=1
         gdf_origin=gdf.copy()
         gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
         gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
@@ -454,7 +457,7 @@ def config(scale):
     return offset, buffer, angle
 offset, buffer, angle = config(50000)
 print(offset)
-gdf=importer('samples/tests_utm2.geojson', epsg=32635)
+gdf=importer('samples/net_utm.geojson', epsg=32635)
 gdf_exploded=explode_gpd(gdf)
 gdf_buffer=buffers_gpd(gdf_exploded, buffer)
 gdf_source=gdf_buffer.copy()
