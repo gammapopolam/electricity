@@ -3,8 +3,10 @@ from io_handler import *
 from hallway_recognition import *
 from vector_algs_handler import *
 from intersection_handler import *
+from config_handler import *
 from shapely import unary_union, normalize
 from shapely.geometry import Point, MultiLineString, LineString
+import shapely
 from sympy.solvers.solveset import linsolve
 from sympy import *
 
@@ -57,6 +59,7 @@ def buffers_gpd(gdf, distance):
         origin_id=val.origin_id
         part_id=val.part_id
         indexed=simple_index(buffer, gdf, i)
+        #print(indexed)
         gdf.at[i, 'line']=line
         gdf.at[i, 'buffer']=buffer
         gdf.at[i, 'origin_id']=origin_id
@@ -69,6 +72,7 @@ def simple_index(buffer, gdf, i):
     for x in [x for x in simple_index.keys() if simple_index[x] == False]:
         simple_index.pop(x)
     indexed=list(simple_index.keys())
+    indexed = [str(x) for x in indexed]
     return indexed
 def restore_lines(gdf):
     # Слайсы по уникальным выражениям
@@ -80,6 +84,7 @@ def restore_lines(gdf):
         printProgressBar(ctr, len(uniqs), prefix = 'Restoring lines:', suffix = 'Complete', length = 50)
         gdf_slice=gdf[gdf['part_id']==uniq]
         origin_id=list(gdf_slice['origin_id'])[0]
+        
         if len(gdf_slice)>1:
             parts=[list(x.coords) for x in gdf_slice.geometry]
             #if list(gdf_slice.geometry)[0].is_empty:
@@ -126,6 +131,7 @@ def restore_lines(gdf):
                 gdf_slice.at[j,'part_id']=part_id
                 gdf_slice.at[j, 'origin_id']=origin_id
             gdf=pd.concat([gdf, gdf_slice]).reset_index(drop=True)
+            
     return gdf
 def process_parts(gdf, angle):
     l=len(gdf)
@@ -133,7 +139,7 @@ def process_parts(gdf, angle):
         printProgressBar(i + 1, l, prefix = 'Processing lines:', suffix = 'Complete', length = 50)
         l1=val1.line
         l1_buff=val1.buffer
-        indexed=val1.simple_index
+        indexed=[int(x) for x in val1.simple_index]
         gdf_slice=gdf.copy()
         gdf_slice=gdf_slice[gdf_slice.index.isin(indexed)]
         val1_part_id=val1.part_id
@@ -199,6 +205,8 @@ def flip_order(gdf, angle):
 def parallel_offset(gdf, gdf_source, dist):
     for j, val in gdf.iterrows():
         geometry=val.line
+        #printProgressBar(j + 1, len(gdf), prefix = 'Parallel offseting:', suffix = 'Complete', length = 50)
+
         #print(val.part_id)
         if geometry.geom_type=='MultiLineString':
             parts=[list(x.coords) for x in list(geometry.geoms)]
@@ -247,6 +255,8 @@ def parallel_offset(gdf, gdf_source, dist):
             gdf.at[j, 'flag']=flag
             gdf.at[j, 'part_id']=part_ids
             #print(gdf.at[j, 'part_id'])
+    gdf.drop_duplicates(subset='part_id', keep="first", inplace=True)
+
     return gdf
 def get_part_id(line, gdf_source):
     for i, val in gdf_source.iterrows():
@@ -289,7 +299,35 @@ def unpack_multilines(gdf_offset):
             gdf_line=gpd.GeoDataFrame({'line': geometry, 'origin_id':part_id.split('_')[0], 'direction': None, 'flag':None, 'part_id':[[part_id]]})
             gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
     gdf_fin=gdf_empty.reset_index(drop=True)
+    gdf_fin.drop_duplicates(subset='part_id', keep="first", inplace=True)
+    gdf_fin=gdf_fin[gdf_fin.geometry.apply(lambda x: x.length>200)]
     return gdf_fin
+def recover_line_dir_new(gdf_offset, gdf_exploded):
+    def new_part_id(x):
+        part_id_1=x[0].split('_')[0].zfill(5)
+        part_id_2=x[0].split('_')[1].zfill(5)
+        #if len(x[0].split('_'))==2:
+        #    part_id_3='00000'
+        #else:
+        #    part_id_3=x[0].split('_')[2].zfill(5)
+        return f'{part_id_1}_{part_id_2}'
+    
+    uniqs=list(sorted(gdf_offset['origin_id'].unique()))
+    i=0
+    gdf_exploded_1=gdf_exploded.copy()
+    gdf_exploded_1['origin_id']=gdf_exploded_1['origin_id'].apply(lambda x: str(x.zfill(5)))
+    gdf_exploded_1['part_id']=gdf_exploded_1['part_id'].apply(lambda x: new_part_id(x))
+    
+    uniqs_partid=list(gdf_offset['part_id'])
+    for uniq_partid in uniqs_partid:
+        print(gdf_offset.loc[gdf_offset['part_id']==uniq_partid])
+    #for uniq in uniqs:
+    #    printProgressBar(i + 1, len(uniqs), prefix = 'Recovering lines:', suffix = 'Complete', length = 50)
+    #    i+=1
+    #    gdf_offset_1=gdf_offset.copy()
+    #    gdf_offset_1=gdf_offset_1[gdf_offset_1['origin_id']==uniq]
+        
+        
 def recover_line_dir(gdf):
     uniqs=list(sorted(gdf['origin_id'].unique()))
     i=0
@@ -297,7 +335,6 @@ def recover_line_dir(gdf):
         printProgressBar(i + 1, len(uniqs), prefix = 'Recovering lines:', suffix = 'Complete', length = 50)
         i+=1
         gdf_origin=gdf.copy()
-        gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
         gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
         gdf_origin['part_id2']=gdf_origin['part_id'].apply(lambda x: x[0].split('_')[1])
         gdf_origin['part_id3']=gdf_origin['part_id'].apply(lambda x: x[0].split('_')[2])
@@ -307,44 +344,52 @@ def recover_line_dir(gdf):
             if l>1:
                 ctr=1
                 back=str(int(current)-ctr).zfill(5)
-                back_geom = gdf_origin[gdf_origin['part_id2']==back]
                 
-                while len(back_geom)==0:
-                    ctr+=1
-                    back=str(int(current)-ctr).zfill(5)
+                #print(current, back)
+                if back in uniqs_part2:
                     back_geom = gdf_origin[gdf_origin['part_id2']==back]
-                current_geoms=gdf_origin[gdf_origin['part_id2']==current]
-                flipped=[]
-                b2=Point(list(list(back_geom['line'])[0].coords)[1])
-                for _, current in current_geoms.iterrows():
-                    c1=Point(list(current['line'].coords)[0])
-                    newdist=float(b2.distance(c1))
-                    flipped.append({'part_id2': current['part_id2'], 'part_id3': current['part_id3'], 'distance': newdist, 'geometry': current['line']})
-                sorted_flipped=sorted(flipped, key=lambda d: d['distance'])
-                sorted_flipped2=[]
-                if flipped[0]!=sorted_flipped[0]:
-                    for elems in sorted_flipped:
-                        l=len(sorted_flipped)
-                        new_part_id3=str(l-int(elems['part_id3'])-1).zfill(5)
-                        elems['part_id3']=new_part_id3
-                        sorted_flipped2.append(elems)
-                else:
-                    sorted_flipped2=sorted_flipped
-                for elems in sorted_flipped2:
-                    full_part_id=f'{uniq}_{elems['part_id2']}_{elems['part_id3']}'
-                    gdf.loc[gdf['part_id'].isin([[full_part_id]]), 'line']=elems['geometry']
+                    while len(back_geom)==0:
+                        ctr+=1
+                        back=str(int(current)-ctr).zfill(5)
+                        #print(uniq, back, current)                    
+                        back_geom = gdf_origin[gdf_origin['part_id2']==back]
+                        #print(back_geom)
+                    current_geoms=gdf_origin[gdf_origin['part_id2']==current]
+                    flipped=[]
+                    b2=Point(list(list(back_geom['line'])[0].coords)[1])
+                    for _, current in current_geoms.iterrows():
+                        c1=Point(list(current['line'].coords)[0])
+                        newdist=float(b2.distance(c1))
+                        flipped.append({'part_id2': current['part_id2'], 'part_id3': current['part_id3'], 'distance': newdist, 'geometry': current['line']})
+                    sorted_flipped=sorted(flipped, key=lambda d: d['distance'])
+                    sorted_flipped2=[]
+                    if flipped[0]!=sorted_flipped[0]:
+                        for elems in sorted_flipped:
+                            l=len(sorted_flipped)
+                            new_part_id3=str(l-int(elems['part_id3'])-1).zfill(5)
+                            elems['part_id3']=new_part_id3
+                            sorted_flipped2.append(elems)
+                    else:
+                        sorted_flipped2=sorted_flipped
+                    for elems in sorted_flipped2:
+                        full_part_id=f'{uniq}_{elems['part_id2']}_{elems['part_id3']}'
+                        gdf.loc[gdf['part_id'].isin([[full_part_id]]), 'line']=elems['geometry']
     return gdf 
 def recover_net(gdf):
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
     gdf_points=None
     i=0
+    logs=open('logs.txt', 'w')
+    logs.close()
+    
     for uniq in uniqs:
-        printProgressBar(i + 1, len(uniqs), prefix = 'Recovering lines:', suffix = 'Complete', length = 50)
+        printProgressBar(i + 1, len(uniqs), prefix = 'Recovering net:', suffix = 'Complete', length = 50)
         i+=1
         #print(uniq)
         gdf_origin=gdf.copy()
         gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
+        gdf_origin.drop_duplicates(subset='part_id', keep="first", inplace=True)
         #print(gdf_origin)
         l=len(gdf_origin)
         #print(l)
@@ -353,82 +398,40 @@ def recover_net(gdf):
         lines=list(gdf_origin['line']) # correct sort
 
         origin_geom=[]
+        if len(lines)<3:
+            continue
         first=lines.pop(0)
         line=lines.pop(0)
-        first, second=flip_segments(first, line, first=True)
+        first, line=flip_segments(first, line, first=True)
         origin_geom.append(list(first.coords)[0])
         origin_geom.append(list(line.coords)[0])
         origin_geom.append(list(line.coords)[1])
         lines = list(filter(lambda x: (x.length>200), lines))
+        
         while len(lines)>1:
-            line_current = LineString((origin_geom[-2], origin_geom[-1]))
-            line_next=lines[0]
             #print(origin_geom)
-            line_current, line_next = flip_segments(line_current, line_next)
-            #print(line_current, line_next)
-            #print(len(lines))
-            solved=segment_solver(line_current, line_next)
-            if solved is not None:
-                line_current, line_next = solved
-                origin_geom.pop()
-                origin_geom.pop()
-                lines.pop(0)
-                if list(line_current.coords)[0] not in origin_geom:
-                    origin_geom.append(list(line_current.coords)[0])
-                if list(line_current.coords)[1] not in origin_geom:
-                    origin_geom.append(list(line_current.coords)[1])
-                if list(line_next.coords)[1] not in origin_geom:
-                    origin_geom.append(list(line_next.coords)[1])
+            logs=open('logs.txt', 'a')
+            try:
+                logs_check=open('logs.txt', 'r')
+                line_current = LineString((origin_geom[-2], origin_geom[-1]))
+            except IndexError:
+                if f'Recover {uniq}: error\n' not in logs_check.read():
+                    logs.write(f'Recover {uniq}: error\n')
+                    logs.close()
+                    break
             else:
-                origin_geom.pop()
-                continue
-            '''
-        while len(lines)>2:
-            line_current = LineString((origin_geom[-2], origin_geom[-1]))
-            line_next=lines[0]
-            line_current, line_next = flip_segments(line_current, line_next)
-            solved=segment_solver(line_current, line_next)
-            #print('current', line_current, line_next)
-            line_current1 = LineString((origin_geom[-2], origin_geom[-1]))
-            line_next1=lines[1]
-            line_current1, line_next1 = flip_segments(line_current1, line_next1)
-            solved_test1=segment_solver(line_current1, line_next1)
-            #print('test', line_current1, line_next1)
-            #print(origin_geom)
-            if solved is not None:
-                line_current, line_next = solved
-                if solved_test1 is not None:
-                    line_current1, line_next1 = solved_test1
+                if f'Recover {uniq}: success\n' not in logs_check.read():
+                    logs.write(f'Recover {uniq}: success\n')
+                    logs.close()
 
-                    p_test = list(line_current.coords)[0]
-                    p_int = list(line_next.coords)[0]
-                    p_int1 = list(line_next1.coords)[0]
-                    #print('test1', LineString((p_test, p_int)), LineString((p_test, p_int1)))
-                    if LineString((p_test, p_int)).length<LineString((p_test, p_int1)).length:
-                        #print('test false')
-                        origin_geom.pop()
-                        origin_geom.pop()
-                        lines.pop(0)
-                        if list(line_current.coords)[0] not in origin_geom:
-                            origin_geom.append(list(line_current.coords)[0])
-                        if list(line_current.coords)[1] not in origin_geom:
-                            origin_geom.append(list(line_current.coords)[1])
-                        if list(line_next.coords)[1] not in origin_geom:
-                            origin_geom.append(list(line_next.coords)[1])
-                    else:
-                        #print('test true')
-                        #line_current, line_next = line_current1, line_next1
-                        origin_geom.pop()
-                        origin_geom.pop()
-                        lines.pop(0)
-                        lines.pop(0)
-                        if list(line_current1.coords)[0] not in origin_geom:
-                            origin_geom.append(list(line_current1.coords)[0])
-                        if list(line_current1.coords)[1] not in origin_geom:
-                            origin_geom.append(list(line_current1.coords)[1])
-                        if list(line_next1.coords)[1] not in origin_geom:
-                            origin_geom.append(list(line_next1.coords)[1])
-                else:
+                line_next=lines[0]
+                #print(origin_geom)
+                line_current, line_next = flip_segments(line_current, line_next)
+                #print(line_current, line_next)
+                #print(len(lines))
+                solved=segment_solver(line_current, line_next)
+                if solved is not None:
+                    line_current, line_next = solved
                     origin_geom.pop()
                     origin_geom.pop()
                     lines.pop(0)
@@ -438,36 +441,118 @@ def recover_net(gdf):
                         origin_geom.append(list(line_current.coords)[1])
                     if list(line_next.coords)[1] not in origin_geom:
                         origin_geom.append(list(line_next.coords)[1])
-            else:
-                origin_geom.pop()
-                continue
-        '''
-        gdf_line=gpd.GeoDataFrame({'line': LineString(origin_geom), 'origin_id':[uniq], 'direction': None, 'flag':None, 'part_id':None})
-        gdf_line.set_geometry('line', inplace=True)
-        gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
+                else:
+                    origin_geom.pop()
+                    continue
+                '''
+            while len(lines)>2:
+                line_current = LineString((origin_geom[-2], origin_geom[-1]))
+                line_next=lines[0]
+                line_current, line_next = flip_segments(line_current, line_next)
+                solved=segment_solver(line_current, line_next)
+                #print('current', line_current, line_next)
+                line_current1 = LineString((origin_geom[-2], origin_geom[-1]))
+                line_next1=lines[1]
+                line_current1, line_next1 = flip_segments(line_current1, line_next1)
+                solved_test1=segment_solver(line_current1, line_next1)
+                #print('test', line_current1, line_next1)
+                #print(origin_geom)
+                if solved is not None:
+                    line_current, line_next = solved
+                    if solved_test1 is not None:
+                        line_current1, line_next1 = solved_test1
+
+                        p_test = list(line_current.coords)[0]
+                        p_int = list(line_next.coords)[0]
+                        p_int1 = list(line_next1.coords)[0]
+                        #print('test1', LineString((p_test, p_int)), LineString((p_test, p_int1)))
+                        if LineString((p_test, p_int)).length<LineString((p_test, p_int1)).length:
+                            #print('test false')
+                            origin_geom.pop()
+                            origin_geom.pop()
+                            lines.pop(0)
+                            if list(line_current.coords)[0] not in origin_geom:
+                                origin_geom.append(list(line_current.coords)[0])
+                            if list(line_current.coords)[1] not in origin_geom:
+                                origin_geom.append(list(line_current.coords)[1])
+                            if list(line_next.coords)[1] not in origin_geom:
+                                origin_geom.append(list(line_next.coords)[1])
+                        else:
+                            #print('test true')
+                            #line_current, line_next = line_current1, line_next1
+                            origin_geom.pop()
+                            origin_geom.pop()
+                            lines.pop(0)
+                            lines.pop(0)
+                            if list(line_current1.coords)[0] not in origin_geom:
+                                origin_geom.append(list(line_current1.coords)[0])
+                            if list(line_current1.coords)[1] not in origin_geom:
+                                origin_geom.append(list(line_current1.coords)[1])
+                            if list(line_next1.coords)[1] not in origin_geom:
+                                origin_geom.append(list(line_next1.coords)[1])
+                    else:
+                        origin_geom.pop()
+                        origin_geom.pop()
+                        lines.pop(0)
+                        if list(line_current.coords)[0] not in origin_geom:
+                            origin_geom.append(list(line_current.coords)[0])
+                        if list(line_current.coords)[1] not in origin_geom:
+                            origin_geom.append(list(line_current.coords)[1])
+                        if list(line_next.coords)[1] not in origin_geom:
+                            origin_geom.append(list(line_next.coords)[1])
+                else:
+                    origin_geom.pop()
+                    continue
+            '''
+        try:
+            LineString(origin_geom)
+        except shapely.errors.GEOSException:
+            pass
+        else:
+            gdf_line=gpd.GeoDataFrame({'line': LineString(origin_geom), 'origin_id':[uniq], 'direction': None, 'flag':None, 'part_id':None})
+            gdf_line.set_geometry('line', inplace=True)
+            gdf_line.set_crs(epsg='32635', inplace=True)
+            gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
+    #logs.close()
     return gdf_empty
 
-def config(scale):
-    Tgraph=0.02*scale/100 # 5m for 25000
-    default_hallway_offset=100 # расстояние между нитками коридора
-    offset = default_hallway_offset*Tgraph/4 # 125m for 25000
-    buffer = 200
-    default_angle=3 # 3deg for 25000
-    angle=8
-    return offset, buffer, angle
+
 offset, buffer, angle = config(50000)
 print(offset)
-gdf=importer('samples/net_utm.geojson', epsg=32635)
+
+gdf=importer('samples/tests_utm3.geojson', epsg=32635)
 gdf_exploded=explode_gpd(gdf)
+#print(gdf_exploded)
+exporter(gdf_exploded.copy(), name='coursework/exploded.gpkg', keep_debug=True, epsg=32635)
 gdf_buffer=buffers_gpd(gdf_exploded, buffer)
+#print(gdf_buffer)
+exporter(gdf_buffer.copy(), name='coursework/clipped.gpkg', keep_debug=True, buffer=False, epsg=32635)
+exporter(gdf_buffer.copy(), name='coursework/buffer.gpkg', keep_debug=True, buffer=True, epsg=32635)
 gdf_source=gdf_buffer.copy()
 #hallway search
 gdf_processed=process_parts(gdf_buffer, angle)
+exporter(gdf_processed.copy(), name='coursework/processed.gpkg', keep_debug=True, buffer=False, epsg=32635)
+
 gdf_flipped=flip_order(gdf_processed, angle)
+exporter(gdf_flipped.copy(), name='coursework/flipped.gpkg', keep_debug=True, epsg=32635)
 gdf_offset=parallel_offset(gdf_flipped, gdf_source, offset)
 gdf_unpacked=unpack_multilines(gdf_offset)
-exporter(gdf_unpacked.copy(), name='tests_offset_restored.gpkg', keep_debug=True, epsg=32635)
+exporter(gdf_unpacked.copy(), name='coursework/offsetted.gpkg', keep_debug=True, epsg=32635)
+
+gdf_recover=recover_line_dir(gdf_unpacked)
+'''
+gdf_unpacked=gpd.read_file('tests_offset_restored.gpkg')
+gdf_unpacked.rename(columns ={'geometry':'line'}, inplace=True)
+gdf_unpacked['part_id']=gdf_unpacked['part_id'].apply(lambda x: list([x]))
+gdf_unpacked
+
 gdf_recover=recover_line_dir(gdf_unpacked)
 exporter(gdf_recover.copy(), name='tests_offset_recover.gpkg', keep_debug=True, epsg=32635)
+'''
+'''
+gdf_recover=gpd.read_file('tests_offset_recover.gpkg')
+gdf_recover.rename(columns ={'geometry':'line'}, inplace=True)
+gdf_recover['part_id']=gdf_recover['part_id'].apply(lambda x: list([x]))
 gdf_net=recover_net(gdf_recover)
 exporter(gdf_net.copy(), name='tests_offset_net.gpkg', keep_debug=True, epsg=32635)
+'''

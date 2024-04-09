@@ -12,11 +12,14 @@ class HallwaySearch:
         self.flag1 = 'undefined'
         self.angle=angle
     def is_buffers_intersect(self):
+        #if intersects(self.l1_buff, self.l2_buff)==True and self.l1_buff.intersection(self.l2_buff).area>(self.l2_buff.area/100*15): #!
         if intersects(self.l1_buff, self.l2_buff)==True and self.l1_buff.intersection(self.l2_buff).area>(self.l2_buff.area/100*15): #!
             return True
         else:
             return False
     def is_stream(self):
+        #if self.angle_flag(self.l1, self.l2)=='hallway':
+        #    return True
         if relate(self.l1, self.l2)=='FF1FF0102' and self.angle_flag(self.l1, self.l2)=='hallway':
             return True
         #elif relate(self.l1, self.l2)=='1F1F00102' and self.angle_flag(self.l1, self.l2)=='hallway':
@@ -125,14 +128,29 @@ class HallwaySearch:
         return self.flag1
     def to_multiline(self, flag):
         if flag=='stream':
+            newgeom=[]
             if self.l1.geom_type=='MultiLineString':
+                for l1_geom in self.l1.geoms:
+                    if l1_geom not in newgeom:
+                        newgeom.append(l1_geom)
                 if self.l2.geom_type=='MultiLineString':
-                    self.multil=MultiLineString([*self.l1.geoms, *self.l2.geoms])
+                    for l2_geom in self.l2.geoms:
+                        if l2_geom not in newgeom:
+                            newgeom.append(l2_geom)
                 elif self.l2.geom_type=='LineString':
-                    self.multil=MultiLineString([*self.l1.geoms, self.l2])
+                    if self.l2 not in newgeom:
+                        newgeom.append(self.l2)
+                    
             elif self.l1.geom_type=='LineString':
+                if self.l1 not in newgeom:
+                    newgeom.append(self.l1)
                 if self.l2.geom_type=='MultiLineString':
-                    self.multil=MultiLineString([self.l1, *self.l2.geoms])
+                    for l2_geom in self.l2.geoms:
+                        if l2_geom not in newgeom:
+                            newgeom.append(l2_geom)
                 elif self.l2.geom_type=='LineString':
-                    self.multil=MultiLineString([self.l1, self.l2])
+                    if self.l2 not in newgeom:
+                        newgeom.append(self.l2)
+        newgeom=list(set(newgeom))
+        self.multil=MultiLineString(newgeom)
         return self.multil

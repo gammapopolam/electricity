@@ -87,9 +87,9 @@ def segment_solver(line_current, line_next):
             return (line_current, line_next)
         else:
             return None
-    '''
+'''
 gdf=gpd.read_file('tests_offset_recover.gpkg')
-uniq='00017'
+uniq='00019'
 gdf_origin=gdf[gdf['origin_id']==uniq]
 gdf_origin.sort_values(by='part_id', ascending=True, inplace=True,ignore_index=True)
 lines=list(gdf_origin.geometry)[:] # correct sort
@@ -99,66 +99,35 @@ first=lines.pop(0)
 line=lines.pop(0)
 first, second=flip_segments(first, line, first=True)
 origin_geom.append(list(first.coords)[0])
-origin_geom.append(list(line.coords)[0])
-origin_geom.append(list(line.coords)[1])
-lines = list(filter(lambda x: (x.length>200), lines))
-while len(lines)>2:
+origin_geom.append(list(second.coords)[0])
+origin_geom.append(list(second.coords)[1])
+#lines = list(filter(lambda x: (x.length>200), lines))
+while len(lines)>1:
+    #print(origin_geom)
     line_current = LineString((origin_geom[-2], origin_geom[-1]))
     line_next=lines[0]
-    line_current, line_next = flip_segments(line_current, line_next)
-    solved=segment_solver(line_current, line_next)
-    #print('current', line_current, line_next)
-    line_current1 = LineString((origin_geom[-2], origin_geom[-1]))
-    line_next1=lines[1]
-    line_current1, line_next1 = flip_segments(line_current1, line_next1)
-    solved_test1=segment_solver(line_current1, line_next1)
-    #print('test', line_current1, line_next1)
     #print(origin_geom)
+    line_current, line_next = flip_segments(line_current, line_next)
+    #print(line_current, line_next)
+    #print(len(lines))
+    solved=segment_solver(line_current, line_next)
     if solved is not None:
         line_current, line_next = solved
-        if solved_test1 is not None:
-            line_current1, line_next1 = solved_test1
-
-            p_test = list(line_current.coords)[0]
-            p_int = list(line_next.coords)[0]
-            p_int1 = list(line_next1.coords)[0]
-            #print('test1', LineString((p_test, p_int)), LineString((p_test, p_int1)))
-            if LineString((p_test, p_int)).length<LineString((p_test, p_int1)).length:
-                #print('test false')
-                origin_geom.pop()
-                origin_geom.pop()
-                lines.pop(0)
-                if list(line_current.coords)[0] not in origin_geom:
-                    origin_geom.append(list(line_current.coords)[0])
-                if list(line_current.coords)[1] not in origin_geom:
-                    origin_geom.append(list(line_current.coords)[1])
-                if list(line_next.coords)[1] not in origin_geom:
-                    origin_geom.append(list(line_next.coords)[1])
-            else:
-                #print('test true')
-                #line_current, line_next = line_current1, line_next1
-                origin_geom.pop()
-                origin_geom.pop()
-                lines.pop(0)
-                lines.pop(0)
-                if list(line_current1.coords)[0] not in origin_geom:
-                    origin_geom.append(list(line_current1.coords)[0])
-                if list(line_current1.coords)[1] not in origin_geom:
-                    origin_geom.append(list(line_current1.coords)[1])
-                if list(line_next1.coords)[1] not in origin_geom:
-                    origin_geom.append(list(line_next1.coords)[1])
-        else:
-            origin_geom.pop()
-            origin_geom.pop()
-            lines.pop(0)
-            if list(line_current.coords)[0] not in origin_geom:
-                origin_geom.append(list(line_current.coords)[0])
-            if list(line_current.coords)[1] not in origin_geom:
-                origin_geom.append(list(line_current.coords)[1])
-            if list(line_next.coords)[1] not in origin_geom:
-                origin_geom.append(list(line_next.coords)[1])
-    else:
         origin_geom.pop()
+        origin_geom.pop()
+        lines.pop(0)
+        if list(line_current.coords)[0] not in origin_geom:
+            origin_geom.append(list(line_current.coords)[0])
+        if list(line_current.coords)[1] not in origin_geom:
+            origin_geom.append(list(line_current.coords)[1])
+        if list(line_next.coords)[1] not in origin_geom:
+            origin_geom.append(list(line_next.coords)[1])
+    else:
+        
+        #origin_geom.append(list(line_current.coords)[0])
+        origin_geom.pop()
+        if list(line_next.coords)[0] not in origin_geom:
+            origin_geom.append(list(line_next.coords)[0])
         continue
 LineString(origin_geom)
 # %%

@@ -24,3 +24,9 @@ tests_offset_net.gpkg
 TSP.py
 flip_ids.gpkg
 flip_ids.py
+coursework/*
+logs.txt
+test.py
+tests_offset_flipped.gpkg
+tests_offset_restored.gpkg
+tests_offset_processed.gpkg

@@ -507,8 +507,10 @@ def recover_line_dir(gdf):
                 while len(back_geom)==0:
                     ctr+=1
                     back=str(int(current)-ctr).zfill(5)
-                    #print(uniq, back, current)
+                    print(uniq, back, current)
                     back_geom = gdf_origin[gdf_origin['part_id2']==back]
+                else:
+                    continue
                 current_geoms=gdf_origin[gdf_origin['part_id2']==current]
                 #print(back_geom, '\n', current_geoms)
                 flipped=[]
