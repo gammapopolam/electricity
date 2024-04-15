@@ -1,3 +1,10 @@
+import warnings
+from pandas.core.common import SettingWithCopyWarning
+
+warnings.simplefilter(action="ignore", category=SettingWithCopyWarning)
+warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.filterwarnings("ignore")
+import pandas as pd
 import geopandas as gpd
 from io_handler import *
 from hallway_recognition import *
@@ -9,6 +16,8 @@ from shapely.geometry import Point, MultiLineString, LineString
 import shapely
 from sympy.solvers.solveset import linsolve
 from sympy import *
+
+
 
 def explode_gpd(gdf):
     line_segs = gpd.GeoSeries(gdf["geometry"]
@@ -517,29 +526,7 @@ def recover_net(gdf):
     return gdf_empty
 
 
-offset, buffer, angle = config(50000)
-print(offset)
 
-gdf=importer('samples/tests_utm3.geojson', epsg=32635)
-gdf_exploded=explode_gpd(gdf)
-#print(gdf_exploded)
-exporter(gdf_exploded.copy(), name='coursework/exploded.gpkg', keep_debug=True, epsg=32635)
-gdf_buffer=buffers_gpd(gdf_exploded, buffer)
-#print(gdf_buffer)
-exporter(gdf_buffer.copy(), name='coursework/clipped.gpkg', keep_debug=True, buffer=False, epsg=32635)
-exporter(gdf_buffer.copy(), name='coursework/buffer.gpkg', keep_debug=True, buffer=True, epsg=32635)
-gdf_source=gdf_buffer.copy()
-#hallway search
-gdf_processed=process_parts(gdf_buffer, angle)
-exporter(gdf_processed.copy(), name='coursework/processed.gpkg', keep_debug=True, buffer=False, epsg=32635)
-
-gdf_flipped=flip_order(gdf_processed, angle)
-exporter(gdf_flipped.copy(), name='coursework/flipped.gpkg', keep_debug=True, epsg=32635)
-gdf_offset=parallel_offset(gdf_flipped, gdf_source, offset)
-gdf_unpacked=unpack_multilines(gdf_offset)
-exporter(gdf_unpacked.copy(), name='coursework/offsetted.gpkg', keep_debug=True, epsg=32635)
-
-gdf_recover=recover_line_dir(gdf_unpacked)
 '''
 gdf_unpacked=gpd.read_file('tests_offset_restored.gpkg')
 gdf_unpacked.rename(columns ={'geometry':'line'}, inplace=True)
