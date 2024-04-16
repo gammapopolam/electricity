@@ -55,6 +55,7 @@ def flip_segments(line_current, line_next, first=False):
             line_next=LineString((list(line_next.coords)[1], list(line_next.coords)[0]))
     return line_current, line_next
 def segment_solver(line_current, line_next):
+   # if abs(get_direction(list(line_current.coords))-get_direction(list(line_next.coords)))<135:
     # Если отрезки имеют пересечение, то новая геометрия - с общей вершиной в точке пересечения линий
     if line_current.intersects(line_next) or list(line_current.coords)[1]==list(line_next.coords)[0]:
         #print('segments intersect')
@@ -71,6 +72,7 @@ def segment_solver(line_current, line_next):
         eq_cur=Equation(line_current)
         eq_next=Equation(line_next)
         p_int, =linsolve([eq_cur.get_straight(), eq_next.get_straight()], (x, y))
+        #print(shapely.geometry.Point(p_int))
         bounds=MultiPoint((shapely.geometry.Point(eq_cur.p2), shapely.geometry.Point(eq_next.p1))).bounds
         test_distance1=float(shapely.geometry.Point(eq_cur.p2).distance(shapely.geometry.Point(eq_cur.p1)))
         test_distance2=float(shapely.geometry.Point(eq_cur.p2).distance(shapely.geometry.Point(eq_next.p1)))

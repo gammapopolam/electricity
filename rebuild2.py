@@ -1,7 +1,7 @@
 import warnings
-from pandas.core.common import SettingWithCopyWarning
+#from pandas.core.common import SettingWithCopyWarning
 
-warnings.simplefilter(action="ignore", category=SettingWithCopyWarning)
+#warnings.simplefilter(action="ignore", category=SettingWithCopyWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore")
 import pandas as pd
@@ -16,8 +16,10 @@ from shapely.geometry import Point, MultiLineString, LineString
 import shapely
 from sympy.solvers.solveset import linsolve
 from sympy import *
+from parallel_pandas import ParallelPandas
 
-
+#initialize parallel-pandas
+ParallelPandas.initialize(n_cpu=8, split_factor=1, disable_pr_bar=True)
 
 def explode_gpd(gdf):
     line_segs = gpd.GeoSeries(gdf["geometry"]
@@ -48,21 +50,27 @@ def explode_gpd(gdf):
     return gdf_exploded
 
 def buffers_gpd(gdf, distance):
+    #print(gdf)
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
     # этот маневр будет стоить нам семи лет
+
     buffers=gpd.GeoDataFrame(geometry=gdf['buffer'])
     gdf=gdf.overlay(buffers, "intersection")
     gdf=restore_lines(gdf)
     #print(gdf.columns)
     gdf.rename(columns={'geometry': 'line'}, inplace=True)
     #print(gdf.columns)
+
     gdf.set_geometry('line', inplace=True)
+
     #print(gdf.columns)
     gdf.drop(columns=['buffer'], inplace=True)
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
     #print(gdf.columns)
-    
+    gdf=restore_lines(gdf)
     for i, val in gdf.iterrows():
+        printProgressBar(i + 1, len(gdf), prefix = 'Indexing:', suffix = 'Complete', length = 50)
+
         line=val.line
         buffer=val.buffer
         origin_id=val.origin_id
@@ -81,7 +89,7 @@ def simple_index(buffer, gdf, i):
     for x in [x for x in simple_index.keys() if simple_index[x] == False]:
         simple_index.pop(x)
     indexed=list(simple_index.keys())
-    indexed = [str(x) for x in indexed]
+
     return indexed
 def restore_lines(gdf):
     # Слайсы по уникальным выражениям
@@ -292,7 +300,7 @@ def unpack_multilines(gdf_offset):
                     part2=part_ids[j].split('_')[1]
                     part3='0'
                 part_id=f'{part1.zfill(5)}_{part2.zfill(5)}_{part3.zfill(5)}'
-                gdf_line=gpd.GeoDataFrame({'line': line, 'origin_id':part_id.split('_')[0], 'direction': None, 'flag':None, 'part_id':[[part_id]]})
+                gdf_line=gpd.GeoDataFrame({'line': line, 'origin_id':part_id.split('_')[0], 'direction': get_direction(list(line.coords)), 'flag':None, 'part_id':[[part_id]]})
                 gdf_empty=pd.concat([gdf_empty, gdf_line], ignore_index=True, axis=0)
         else:
             partid=val.part_id[0]
@@ -311,79 +319,7 @@ def unpack_multilines(gdf_offset):
     gdf_fin.drop_duplicates(subset='part_id', keep="first", inplace=True)
     gdf_fin=gdf_fin[gdf_fin.geometry.apply(lambda x: x.length>200)]
     return gdf_fin
-def recover_line_dir_new(gdf_offset, gdf_exploded):
-    def new_part_id(x):
-        part_id_1=x[0].split('_')[0].zfill(5)
-        part_id_2=x[0].split('_')[1].zfill(5)
-        #if len(x[0].split('_'))==2:
-        #    part_id_3='00000'
-        #else:
-        #    part_id_3=x[0].split('_')[2].zfill(5)
-        return f'{part_id_1}_{part_id_2}'
-    
-    uniqs=list(sorted(gdf_offset['origin_id'].unique()))
-    i=0
-    gdf_exploded_1=gdf_exploded.copy()
-    gdf_exploded_1['origin_id']=gdf_exploded_1['origin_id'].apply(lambda x: str(x.zfill(5)))
-    gdf_exploded_1['part_id']=gdf_exploded_1['part_id'].apply(lambda x: new_part_id(x))
-    
-    uniqs_partid=list(gdf_offset['part_id'])
-    for uniq_partid in uniqs_partid:
-        print(gdf_offset.loc[gdf_offset['part_id']==uniq_partid])
-    #for uniq in uniqs:
-    #    printProgressBar(i + 1, len(uniqs), prefix = 'Recovering lines:', suffix = 'Complete', length = 50)
-    #    i+=1
-    #    gdf_offset_1=gdf_offset.copy()
-    #    gdf_offset_1=gdf_offset_1[gdf_offset_1['origin_id']==uniq]
-        
-        
-def recover_line_dir(gdf):
-    uniqs=list(sorted(gdf['origin_id'].unique()))
-    i=0
-    for uniq in uniqs:
-        printProgressBar(i + 1, len(uniqs), prefix = 'Recovering lines:', suffix = 'Complete', length = 50)
-        i+=1
-        gdf_origin=gdf.copy()
-        gdf_origin=gdf_origin[gdf_origin['origin_id']==uniq]
-        gdf_origin['part_id2']=gdf_origin['part_id'].apply(lambda x: x[0].split('_')[1])
-        gdf_origin['part_id3']=gdf_origin['part_id'].apply(lambda x: x[0].split('_')[2])
-        uniqs_part2=list(sorted(gdf_origin['part_id2'].unique()))
-        for current in uniqs_part2:
-            l=len(gdf_origin[gdf_origin['part_id2']==current])
-            if l>1:
-                ctr=1
-                back=str(int(current)-ctr).zfill(5)
-                
-                #print(current, back)
-                if back in uniqs_part2:
-                    back_geom = gdf_origin[gdf_origin['part_id2']==back]
-                    while len(back_geom)==0:
-                        ctr+=1
-                        back=str(int(current)-ctr).zfill(5)
-                        #print(uniq, back, current)                    
-                        back_geom = gdf_origin[gdf_origin['part_id2']==back]
-                        #print(back_geom)
-                    current_geoms=gdf_origin[gdf_origin['part_id2']==current]
-                    flipped=[]
-                    b2=Point(list(list(back_geom['line'])[0].coords)[1])
-                    for _, current in current_geoms.iterrows():
-                        c1=Point(list(current['line'].coords)[0])
-                        newdist=float(b2.distance(c1))
-                        flipped.append({'part_id2': current['part_id2'], 'part_id3': current['part_id3'], 'distance': newdist, 'geometry': current['line']})
-                    sorted_flipped=sorted(flipped, key=lambda d: d['distance'])
-                    sorted_flipped2=[]
-                    if flipped[0]!=sorted_flipped[0]:
-                        for elems in sorted_flipped:
-                            l=len(sorted_flipped)
-                            new_part_id3=str(l-int(elems['part_id3'])-1).zfill(5)
-                            elems['part_id3']=new_part_id3
-                            sorted_flipped2.append(elems)
-                    else:
-                        sorted_flipped2=sorted_flipped
-                    for elems in sorted_flipped2:
-                        full_part_id=f'{uniq}_{elems['part_id2']}_{elems['part_id3']}'
-                        gdf.loc[gdf['part_id'].isin([[full_part_id]]), 'line']=elems['geometry']
-    return gdf 
+
 def recover_net(gdf):
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
@@ -415,7 +351,7 @@ def recover_net(gdf):
         origin_geom.append(list(first.coords)[0])
         origin_geom.append(list(line.coords)[0])
         origin_geom.append(list(line.coords)[1])
-        lines = list(filter(lambda x: (x.length>200), lines))
+        #lines = list(filter(lambda x: (x.length>200), lines))
         
         while len(lines)>1:
             #print(origin_geom)
