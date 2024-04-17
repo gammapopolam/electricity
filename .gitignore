@@ -1,4 +1,3 @@
-exploded.gpkg
 net_utm.qmd
 tests_buffer.gpkg
 tests_line.gpkg
@@ -24,8 +23,6 @@ tests_offset_net.gpkg
 TSP.py
 flip_ids.gpkg
 flip_ids.py
-coursework/*
-logs.txt
 test.py
 tests_offset_flipped.gpkg
 tests_offset_restored.gpkg

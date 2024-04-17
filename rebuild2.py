@@ -320,12 +320,12 @@ def unpack_multilines(gdf_offset):
     gdf_fin=gdf_fin[gdf_fin.geometry.apply(lambda x: x.length>200)]
     return gdf_fin
 
-def recover_net(gdf):
+def recover_net(gdf, logspath):
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
     gdf_points=None
     i=0
-    logs=open('logs.txt', 'w')
+    logs=open(logspath, 'w')
     logs.close()
     
     for uniq in uniqs:
@@ -355,9 +355,9 @@ def recover_net(gdf):
         
         while len(lines)>1:
             #print(origin_geom)
-            logs=open('logs.txt', 'a')
+            logs=open(logspath, 'a')
             try:
-                logs_check=open('logs.txt', 'r')
+                logs_check=open(logspath, 'r')
                 line_current = LineString((origin_geom[-2], origin_geom[-1]))
             except IndexError:
                 if f'Recover {uniq}: error\n' not in logs_check.read():
