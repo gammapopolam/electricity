@@ -84,6 +84,6 @@ exporter(gdf_recover.copy(), name='coursework/500000/line_recovered.gpkg', keep_
 #%%
 # Восстановление сети
 start_time = time.time()
-gdf_net=recover_net(gdf_recover, 'coursework/50000/logs.txt')
+gdf_net=recover_net(gdf_recover, 'coursework/500000/logs.txt')
 print("Recovering finished --- %s seconds ---" % (time.time() - start_time))
 exporter(gdf_net.copy(), name='coursework/500000/final.gpkg', keep_debug=True, epsg=32635)

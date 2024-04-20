@@ -67,7 +67,7 @@ def buffers_gpd(gdf, distance):
     gdf.drop(columns=['buffer'], inplace=True)
     gdf['buffer']=gdf.geometry.buffer(distance=distance, cap_style=2, join_style=2)
     #print(gdf.columns)
-    gdf=restore_lines(gdf)
+    #gdf=restore_lines(gdf)
     for i, val in gdf.iterrows():
         printProgressBar(i + 1, len(gdf), prefix = 'Indexing:', suffix = 'Complete', length = 50)
 
@@ -98,10 +98,10 @@ def restore_lines(gdf):
     ctr=0
     for uniq in uniqs:
         ctr+=1
-        printProgressBar(ctr, len(uniqs), prefix = 'Restoring lines:', suffix = 'Complete', length = 50)
+        #printProgressBar(ctr, len(uniqs), prefix = 'Restoring lines:', suffix = 'Complete', length = 50)
         gdf_slice=gdf[gdf['part_id']==uniq]
         origin_id=list(gdf_slice['origin_id'])[0]
-        
+        print(uniq, end=' ')
         if len(gdf_slice)>1:
             parts=[list(x.coords) for x in gdf_slice.geometry]
             #if list(gdf_slice.geometry)[0].is_empty:
@@ -124,13 +124,16 @@ def restore_lines(gdf):
             df_p2.rename(columns={'p2_x': 'p_x', 'p2_y': 'p_y'}, inplace=True)
             df_points=pd.concat([df_p1, df_p2], ignore_index=True, axis=0)
             #print(uniq, d, end=' ')
+            flag='undefined'
+            #print(d)
             if (d>-90 and d<90) or (d>270 and d<450) or (d<-270 and d>-450):
                 flag='Ox_right'
                 df_points.sort_values(by='p_x', ascending=True, inplace=True)
                 
-            elif (d>90 and d<270) or (d>-90 and d<-270):
+            elif (d>90 and d<270) or (d<-90 and d>-270):
                 flag='Ox_left'
                 df_points.sort_values(by='p_x', ascending=False, inplace=True)
+            print(d, flag)
             df_points.drop_duplicates(inplace=True)
             df_points.reset_index(inplace=True, drop=True)
             restored_lines=[]
@@ -319,7 +322,22 @@ def unpack_multilines(gdf_offset):
     gdf_fin.drop_duplicates(subset='part_id', keep="first", inplace=True)
     gdf_fin=gdf_fin[gdf_fin.geometry.apply(lambda x: x.length>200)]
     return gdf_fin
-
+def sort_nearest(line_current, lines):
+    lines_slice=lines[:4]
+    cur_p2=shapely.geometry.Point(list(line_current.coords)[-1])
+    dists=dict()
+    indexes=dict()
+    for i in range(len(lines_slice)):
+        line_next=lines_slice[i]
+        next_p1=shapely.geometry.Point(list(line_next.coords)[0])
+        dist=cur_p2.distance(next_p1)
+        dists[i]=dist
+        indexes[i]=line_next
+    sort_dists={k: v for k, v in sorted(dists.items(), key=lambda item: item[1])}
+    #print(sort_dists)
+    sort_lines=[indexes[x] for x in sort_dists.keys()]
+    new_order_lines=sort_lines+lines[4:]
+    return new_order_lines
 def recover_net(gdf, logspath):
     uniqs=list(sorted(gdf['origin_id'].unique()))
     gdf_empty=gdf.drop(gdf.index)
@@ -358,6 +376,7 @@ def recover_net(gdf, logspath):
             logs=open(logspath, 'a')
             try:
                 logs_check=open(logspath, 'r')
+                print(origin_geom)
                 line_current = LineString((origin_geom[-2], origin_geom[-1]))
             except IndexError:
                 if f'Recover {uniq}: error\n' not in logs_check.read():
@@ -369,8 +388,9 @@ def recover_net(gdf, logspath):
                     logs.write(f'Recover {uniq}: success\n')
                     logs.close()
 
-                line_next=lines[0]
                 #print(origin_geom)
+                lines=sort_nearest(line_current, lines)
+                line_next=lines[0]
                 line_current, line_next = flip_segments(line_current, line_next)
                 #print(line_current, line_next)
                 #print(len(lines))
@@ -387,7 +407,7 @@ def recover_net(gdf, logspath):
                     if list(line_next.coords)[1] not in origin_geom:
                         origin_geom.append(list(line_next.coords)[1])
                 else:
-                    origin_geom.pop()
+                    lines.pop(0)
                     continue
                 '''
             while len(lines)>2:
